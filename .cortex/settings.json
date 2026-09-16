@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "sql_execute",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .cortex/hooks/protect-audit.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

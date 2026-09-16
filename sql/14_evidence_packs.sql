@@ -10,8 +10,8 @@
 --   case        who, which week, how much
 --   finding     the model's probability, band, and both sides of its reasoning
 --   rule        the policy version in force AT THE TIME (as-was) and TODAY
---               (as-now), each with its citation -- resolved through
---               POLICY.POLICY_AS_OF, never hardcoded
+--               (as-now), each with its citation -- resolved by temporal join
+--               on the validity interval, never hardcoded
 --   why_missed  the arithmetic of the gap, stated explicitly
 --   evidence    the point-in-time feature snapshot exactly as the model saw it
 --   provenance  model, thresholds, run timestamp
@@ -19,8 +19,8 @@
 -- Packs are built for the ESCALATE band only. Generating evidence for cases you
 -- are not escalating is noise, and it is not what a lookback produces.
 --
--- Two-stage by design: content first (independent per row, cannot fail
--- partially), chaining second. If the chain step fails the packs still exist.
+-- Packs are built here; the hash chain is a separate append-only table built
+-- by sql/16. Keeping them apart means a chain rebuild never touches a pack.
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;
@@ -39,17 +39,18 @@ CREATE OR REPLACE TABLE AUDIT.EVIDENCE_PACK (
     p_suspicious    FLOAT,
     payload         VARIANT         NOT NULL,
     content_hash    STRING          NOT NULL,   -- SHA2 of the payload alone
-    prev_chain_hash STRING,                     -- filled by the chaining pass
-    chain_hash      STRING,
     built_at        TIMESTAMP_NTZ   DEFAULT CURRENT_TIMESTAMP()
+    -- No chain columns. The hash chain is a separate append-only table built by
+    -- sql/16 (AUDIT.EVIDENCE_CHAIN). Carrying chain state here required an
+    -- UPDATE against the very table that is supposed to be immutable.
 );
 
 -- ---------------------------------------------------------------------------
 -- 2. Build. One pack per escalated customer-week.
 --
--- Note the policy resolution: as-was comes from POLICY_AS_OF(week_end), as-now
--- from POLICY_AS_OF(current date). The two differ by one argument. That is the
--- entire replay, made auditable.
+-- Note the policy resolution: as-was is the version whose validity interval
+-- contains the window end; as-now is the version with no end date. The two
+-- differ by one predicate. That is the entire replay, made auditable.
 -- ---------------------------------------------------------------------------
 
 INSERT INTO AUDIT.EVIDENCE_PACK
@@ -207,65 +208,14 @@ FROM AUDIT.EVIDENCE_PACK;
 --    is what a lookback does.
 -- ---------------------------------------------------------------------------
 
-CREATE OR REPLACE PROCEDURE AUDIT.CHAIN_EVIDENCE_PACKS()
-RETURNS STRING
-LANGUAGE SQL
-AS
-$$
--- Snowflake Scripting will not resolve a cursor field (r.seq) inside embedded
--- SQL; values must pass through local variables and : bindings.
-DECLARE
-    prev STRING  DEFAULT 'GENESIS';
-    cur  STRING;
-    s    NUMBER;
-    ch   STRING;
-    n    INTEGER DEFAULT 0;
-    c CURSOR FOR SELECT seq, content_hash FROM AUDIT.EVIDENCE_PACK ORDER BY seq;
-BEGIN
-    FOR r IN c DO
-        s   := r.seq;
-        ch  := r.content_hash;
-        cur := SHA2(:prev || :ch, 256);
-        UPDATE AUDIT.EVIDENCE_PACK
-           SET prev_chain_hash = :prev, chain_hash = :cur
-         WHERE seq = :s;
-        prev := :cur;
-        n := n + 1;
-    END FOR;
-    RETURN 'chained ' || n || ' packs, head=' || :prev;
-END;
-$$;
-
-CALL AUDIT.CHAIN_EVIDENCE_PACKS();
-
--- ---------------------------------------------------------------------------
--- 4. Verification. Recomputes the chain from the payloads and reports any
---    pack whose stored hash disagrees. This is the query an examiner runs.
--- ---------------------------------------------------------------------------
-
-CREATE OR REPLACE VIEW AUDIT.V_CHAIN_VERIFICATION AS
-SELECT
-    p.seq,
-    p.case_ref,
-    SHA2(TO_JSON(p.payload), 256) = p.content_hash                           AS content_intact,
-    COALESCE(LAG(p.chain_hash) OVER (ORDER BY p.seq), 'GENESIS')
-        = p.prev_chain_hash                                                  AS link_intact,
-    SHA2(p.prev_chain_hash || p.content_hash, 256) = p.chain_hash            AS hash_intact
-FROM AUDIT.EVIDENCE_PACK p;
-
-SELECT
-    COUNT(*)                                                       AS packs,
-    COALESCE(SUM(CASE WHEN content_intact THEN 0 ELSE 1 END), 0)   AS payload_tampered,
-    COALESCE(SUM(CASE WHEN link_intact    THEN 0 ELSE 1 END), 0)   AS chain_broken,
-    COALESCE(SUM(CASE WHEN hash_intact    THEN 0 ELSE 1 END), 0)   AS hash_mismatched,
-    -- An empty table is not an intact chain; it is nothing to verify. Saying
-    -- INTACT there would be a false assurance, which is the one thing an
-    -- integrity check must never give.
-    CASE WHEN COUNT(*) = 0 THEN 'EMPTY - NOTHING TO VERIFY'
-         WHEN COALESCE(SUM(CASE WHEN content_intact AND link_intact AND hash_intact
-                                THEN 0 ELSE 1 END), 0) = 0
-         THEN 'INTACT' ELSE 'TAMPERED' END                         AS verdict
-FROM AUDIT.V_CHAIN_VERIFICATION;
+-- The hash chain is built by sql/16_append_only_chain.sql, which INSERTs links
+-- into AUDIT.EVIDENCE_CHAIN. It is deliberately not built here: an earlier
+-- version UPDATEd this table to store chain state, which contradicted the
+-- append-only guarantee and would now be refused by the PreToolUse hook.
+--
+--     CALL AUDIT.BUILD_EVIDENCE_CHAIN();
+--
+-- Verification lives in AUDIT.V_CHAIN_VERIFICATION, also defined in sql/16.
 
 -- ---------------------------------------------------------------------------
 -- 5. One rendered pack. This is what an investigator opens.
@@ -283,7 +233,7 @@ SELECT
     payload:rule_as_now:policy_version_id::STRING       AS rule_now,
     payload:finding:strongest_aggravating::STRING       AS aggravating,
     payload:finding:strongest_mitigating::STRING        AS mitigating,
-    LEFT(chain_hash, 16) || '...'                       AS chain_hash
+    LEFT(content_hash, 16) || '...'                     AS content_hash
 FROM AUDIT.EVIDENCE_PACK
 ORDER BY p_suspicious DESC, seq
 LIMIT 1;
