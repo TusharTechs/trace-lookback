@@ -174,8 +174,20 @@ SELECT
          ELSE 1.5 END                                                    AS weekly_volatility,
     COALESCE(DATEDIFF(week, r.first_active_week, r.week_start), 0)       AS weeks_since_cash_activity_began,
     GREATEST(COALESCE(r.max_branches_hist, 1), 1)                        AS distinct_branches_used,
-    ROUND(LEAST(COALESCE(r.hist_outflow / NULLIF(r.hist_cash, 0), 0), 1.0), 2)
-                                                                         AS outward_transfer_ratio,
+    -- NULL, not 0, when there was no prior cash to transfer.
+    --
+    -- This ratio is computed over the preceding window. For a sudden-onset
+    -- account -- no cash for 26 weeks, then a large burst -- the denominator is
+    -- zero. Coalescing that to 0 renders as "0% of cash was moved out", which
+    -- the model read as evidence of funds being RETAINED, and cited as a
+    -- mitigating factor on the highest-scored case in the whole run. An absence
+    -- of data was presented as a measurement.
+    --
+    -- NULL propagates into the prompt as "no prior cash activity", which is
+    -- what the record actually says.
+    CASE WHEN COALESCE(r.hist_cash, 0) > 0
+         THEN ROUND(LEAST(r.hist_outflow / r.hist_cash, 1.0), 2)
+         ELSE NULL END                                                   AS outward_transfer_ratio,
     COALESCE(r.prior_alert_count, 0)                                     AS prior_alert_count
 FROM rolled r
 JOIN CORE.CUSTOMERS c ON c.customer_id = r.customer_id

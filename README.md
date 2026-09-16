@@ -44,23 +44,28 @@ adjudicates each one — inside Snowflake, next to the data.
 | | |
 |---|---|
 | Genuinely suspicious in that population | 1,331 |
-| **Recovered at the review threshold** | **1,139 — recall 0.856** |
-| Precision | 0.596 |
+| **Recovered at the review threshold** | **1,131 — recall 0.850** |
+| Precision | 0.593 |
+| AUC on this population | 0.608 |
 | Cost of the full lookback | ~**$15** |
 
 The output is a ranked triage, not a verdict:
 
 | band | weeks | notional | actually suspicious | hit rate |
 |---|---|---|---|---|
-| **ESCALATE** ≥ 0.60 | 671 | ₹60.0 Cr | 537 | **80.0%** |
-| REVIEW 0.45–0.60 | 1,243 | ₹111.3 Cr | 603 | 48.5% |
-| DEPRIORITISE < 0.45 | 845 | ₹75.6 Cr | 191 | 22.6% |
+| **ESCALATE** ≥ 0.60 | 687 | ₹61.4 Cr | 546 | **79.5%** |
+| REVIEW 0.45–0.60 | 1,223 | ₹109.4 Cr | 586 | 47.9% |
+| DEPRIORITISE < 0.45 | 849 | ₹76.1 Cr | 199 | 23.4% |
 
-Read as workload against yield: **examine 24% of the population, recover 40% of
-the laundering.** Examine 69%, recover 86%.
+Read as workload against yield: **work the top 25% of the queue, recover 41% of
+the laundering.** Top decile hit rate is 0.889 against a base rate of 0.482.
 
-The lowest band is *deprioritise*, never *clear*. It still contains 191
+The lowest band is *deprioritise*, never *clear*. It still contains 199
 genuinely suspicious weeks.
+
+Escalated cases are issued as **687 hash-chained evidence packs** — the rule in
+force then and now with citations, the arithmetic of why no alert fired, the
+point-in-time evidence, and a chain an examiner can verify rather than trust.
 
 ---
 
@@ -70,8 +75,12 @@ genuinely suspicious weeks.
 *event time* (when something happened) and *knowledge time* (when we learned it
 or acted). Policy versions carry their own validity interval and are immutable —
 a changed threshold inserts a new row, never updates the old one, because
-updating in place relabels history. `POLICY.POLICY_AS_OF()` resolves the version
-in force on any date, and every replay goes through it.
+updating in place relabels history. Replay resolves the version in force by
+joining the validity interval directly, so the temporal predicate is visible in
+the query rather than hidden inside a function — which matters for a system
+whose whole claim is auditable point-in-time reasoning. (`POLICY.POLICY_AS_OF()`
+exists for interactive scalar use; Snowflake cannot evaluate it per-row against
+a column.)
 
 Time Travel is deliberately **not** used: retention caps at 90 days, and a
 lookback spans years.
@@ -124,11 +133,11 @@ connection. Knowing where a control stops is part of using it honestly.
 - Synthetic corpus generator with a documented reviewer noise model and behavioural mimicry
 - Point-in-time replay engine in SQL, validated against the generator
 - Cortex adjudication over the full invisible population, with a calibrated operating point
+- Hash-chained evidence packs with an examiner-runnable integrity check
 - Column masking policies (Enterprise), Restricted Session Scope
 
 **Not built yet** — named plainly rather than implied:
 
-- Evidence-pack generation (case narrative + policy citation + hash chain)
 - Streamlit interface
 - Cortex Agent / Cortex Search over a policy corpus, and the LLM→predicate compiler with human certification
 - `PreToolUse` hook enforcing append-only writes to the audit log
@@ -144,6 +153,8 @@ sql/02_eval_tables.sql       ground-truth tables, isolated from the agent role
 sql/11_reload_and_score_v5   stage + load the corpus
 sql/12_replay_engine.sql     point-in-time features, with a validation gate
 sql/13_adjudicate.sql        recalibration, then full adjudication
+sql/14_evidence_packs.sql    hash-chained evidence packs + integrity check
+sql/15_final_metrics.sql     AUC, lift curve, branch concentration
 sql/03–10                    superseded; retained as history
 generator/generate.py        synthetic corpus (seeded, deterministic)
 generator/load.py            optional Python loader
@@ -163,9 +174,11 @@ part of the argument.
 uv run --with numpy --with pandas generator/generate.py --scale slice
 ```
 
-Then, from the repo root, run `sql/01`, `02`, `11`, `12`, `13` in order —
-through CoCo CLI, Snowsight, or any Snowflake client. `PUT` paths are relative
-to the repo root.
+Then, from the repo root, run `sql/01`, `02`, `11`, `12`, `13`, `14`, `15` in
+order — through CoCo CLI, Snowsight, or any Snowflake client. `PUT` paths are
+relative to the repo root.
+
+`13` makes ~2,900 Cortex calls (~$15); the rest are ordinary SQL.
 
 Requires Snowflake **Enterprise** (masking and row-access policies) in a region
 with Cortex model availability. Developed on `AWS_US_WEST_2`.
@@ -176,8 +189,8 @@ with Cortex model availability. Developed on `AWS_US_WEST_2`.
 
 [`EVALUATION.md`](EVALUATION.md) is the full account. In short:
 
-- **AUC is 0.604** against an oracle ceiling of 0.868. Real signal in the record
-  is not being extracted.
+- **AUC is 0.608** on the invisible population (0.541 on alerts) against an
+  oracle ceiling of 0.868. Real signal in the record is not being extracted.
 - **The model does not beat human reviewers head-to-head.** On alerts that *did*
   fire, it trades precision for recall and wins on neither at a single
   threshold. Its value is reaching a population no analyst reviewed at all —

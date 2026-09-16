@@ -73,8 +73,14 @@ SELECT
                                   || e.weeks_since_cash_activity_began::STRING || CHR(10)
  || CHR(10)
  || 'MOVEMENT OF FUNDS' || CHR(10)
+ -- A NULL ratio means there was no prior cash to transfer, not that funds were
+ -- retained. Saying "0%" there invites the model to treat missing data as an
+ -- innocent explanation, which is exactly what happened before this was fixed.
  || '- Share of deposited cash transferred out by NEFT/RTGS/IMPS: '
-                                  || TO_VARCHAR(ROUND(e.outward_transfer_ratio * 100, 0)) || '%' || CHR(10)
+                                  || CASE WHEN e.outward_transfer_ratio IS NULL
+                                          THEN 'not measurable - no cash activity in the preceding window'
+                                          ELSE TO_VARCHAR(ROUND(e.outward_transfer_ratio * 100, 0)) || '%' END
+                                  || CHR(10)
  || '- Distinct branches used: '  || e.distinct_branches_used::STRING || CHR(10)
  || CHR(10)
  || 'CUSTOMER CONTEXT' || CHR(10)

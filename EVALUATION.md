@@ -35,24 +35,48 @@ inside Snowflake via `AI_COMPLETE`. Zero parse failures.
 |---|---|
 | Weeks adjudicated | **2,759** (0 failures) |
 | Genuinely suspicious in that population | 1,331 (48.2%) |
-| **Recall at threshold 0.45** | **0.856** — 1,139 of 1,331 recovered |
-| Precision | 0.596 |
-| Accuracy | 0.650 |
-| Flagged | 1,914 weeks · ₹171.3 Cr · 218 customers |
+| **AUC on this population** | **0.608** |
+| **Recall at threshold 0.45** | **0.850** — 1,131 of 1,331 recovered |
+| Precision | 0.593 |
+| Accuracy | 0.646 |
+| Flagged | 1,910 weeks · ₹170.8 Cr · 216 customers |
 
 Output is a three-band triage, not a verdict:
 
 | band | weeks | notional | actually dirty | hit rate |
 |---|---|---|---|---|
-| **ESCALATE ≥ 0.60** | 671 | ₹60.0 Cr | 537 | **80.0%** |
-| REVIEW 0.45–0.60 | 1,243 | ₹111.3 Cr | 603 | 48.5% |
-| DEPRIORITISE < 0.45 | 845 | ₹75.6 Cr | 191 | 22.6% |
+| **ESCALATE ≥ 0.60** | 687 | ₹61.4 Cr | 546 | **79.5%** |
+| REVIEW 0.45–0.60 | 1,223 | ₹109.4 Cr | 586 | 47.9% |
+| DEPRIORITISE < 0.45 | 849 | ₹76.1 Cr | 199 | 23.4% |
 
-Read as workload against yield: **examine 24% of the population, recover 40% of
-the laundering.** Examine 69%, recover 86%.
-
-The lowest band is named *deprioritise*, not *clear*. It still contains 191
+The lowest band is named *deprioritise*, not *clear*. It still contains 199
 genuinely suspicious weeks. Auto-closing it would miss them.
+
+### Lift — workload against yield
+
+The more useful framing for an operations owner than any single metric:
+
+| queue worked | weeks | hit rate | cumulative recall |
+|---|---|---|---|
+| top 18% | 492 | 0.81–0.89 | **0.301** |
+| **top 25%** | 687 | 0.75+ | **0.410** |
+| top 35% | 976 | 0.71+ | **0.564** |
+| top 61% | 1,686 | 0.39 | 0.769 |
+
+Top-decile hit rate is **0.889 against a base rate of 0.482** — 1.84× lift.
+Discrimination is modest (AUC 0.608) but the head of the queue is materially
+richer than the population, which is what makes the work finite.
+
+### Score separation
+
+| | n | mean p | median | min | max |
+|---|---|---|---|---|---|
+| CLEAN | 1,428 | 0.482 | 0.48 | 0.18 | 0.78 |
+| DIRTY | 1,331 | 0.572 | 0.58 | 0.28 | 0.78 |
+
+Means separate; ranges overlap almost entirely. Note the ceiling: the model
+never returns above 0.78 for any case, clean or dirty. Probabilities are
+range-compressed, which limits how sharp the escalation band can be made.
 
 ---
 
@@ -69,14 +93,25 @@ carry human dispositions), the model does **not** dominate:
 | operating point | accuracy | recall | precision |
 |---|---|---|---|
 | Human reviewers | **0.731** | 0.595 | **0.573** |
-| Model @ 0.45 | 0.613 | **0.820** | 0.515 |
-| Model @ 0.55 | 0.707 | 0.475 | 0.707 |
-| Model @ 0.60 | **0.733** | 0.393 | **0.889** |
+| Model @ 0.45 | 0.593 | **0.721** | 0.500 |
+| Model @ 0.50 | 0.640 | 0.689 | 0.545 |
+| Model @ 0.55 | 0.713 | 0.475 | **0.725** |
+| Model @ 0.60 | 0.713 | 0.393 | **0.800** |
 
 There is no threshold at which the model beats reviewers on both precision and
-recall. It trades one for the other. The system's value is not that it
-adjudicates better than an analyst; it is that it adjudicates **a population no
-analyst could reach**, and ranks it well enough to make the work finite.
+recall. It trades one for the other. **AUC on this population is 0.541** —
+barely above chance.
+
+The system's value is not that it adjudicates better than an analyst. It is
+that it adjudicates **a population no analyst could reach**, where it performs
+better (AUC 0.608) because that band is enriched with the sudden-onset accounts
+a structuring operation produces — and ranks it well enough to make the work
+finite.
+
+**These are two different distributions and the numbers are not
+interchangeable.** Earlier drafts of this document quoted the alert-population
+AUC as though it described performance on the invisible population. It does
+not.
 
 ---
 
@@ -232,27 +267,61 @@ Determinism is deliberate. Self-consistency sampling would give a better
 uncertainty estimate, but a regulatory replay that returns different verdicts on
 re-run is not defensible to an examiner.
 
-**AUC = 0.604.**
+**AUC = 0.541** on the alert population, **0.608** on the invisible population.
 
 An earlier measurement of 0.699 was **inflated and has been discarded**. It used
 generator-computed features, one of which — `outward_transfer_ratio` — was the
 same simulation parameter that drives the ground-truth evidence score. It is not
-observable in a bank. Scoring against it leaked the generative process. 0.604 is
-the honest figure, on features that exist in the transaction record.
+observable in a bank. Scoring against it leaked the generative process.
 
-Threshold sweep (the operating point is chosen by us, not by the model):
+Threshold sweep on the alert population (the operating point is chosen by us,
+not by the model):
 
 | threshold | accuracy | recall | precision | % flagged |
 |---|---|---|---|---|
-| 0.40 | 0.447 | 0.984 | 0.423 | 94.7% |
-| **0.45** | 0.613 | **0.820** | 0.515 | 64.7% |
-| 0.50 | 0.620 | 0.689 | 0.525 | 53.3% |
-| 0.55 | 0.707 | 0.475 | 0.707 | 27.3% |
-| **0.60** | **0.733** | 0.393 | **0.889** | 18.0% |
+| 0.40 | 0.420 | 0.984 | 0.411 | 97.3% |
+| **0.45** | 0.593 | **0.721** | 0.500 | 58.7% |
+| 0.50 | 0.640 | 0.689 | 0.545 | 51.3% |
+| 0.55 | 0.713 | 0.475 | 0.725 | 26.7% |
+| **0.60** | 0.713 | 0.393 | **0.800** | 20.0% |
 
 **0.45 is locked** as the review threshold and **0.60** as the escalation
 threshold. Because probabilities are persisted rather than verdicts, either can
 be re-chosen from this sweep without re-running a single model call.
+
+### A fix that was right on principle and neutral on the metrics
+
+`outward_transfer_ratio` is computed over the preceding 26 weeks. For a
+sudden-onset account — no cash for 26 weeks, then a large burst — the
+denominator is zero, and the original code coalesced that to `0`. The prompt
+then rendered it as *"0% of deposited cash transferred out"*.
+
+The model read that as evidence of funds being **retained**, and cited it as a
+mitigating factor on the highest-scored case in the entire run. An absence of
+data was presented as a measurement, and the model reasoned from it.
+
+This was caught by **reading an evidence pack**, not by any metric. Discovery is
+documented in §8.
+
+The field now returns `NULL`, and the prompt says *"not measurable — no cash
+activity in the preceding window"*. Re-running the full adjudication after the
+fix:
+
+| | before | after |
+|---|---|---|
+| Recalibration AUC (n=150) | 0.604 | 0.541 |
+| Adjudication recall @0.45 | 0.856 | 0.850 |
+| Precision | 0.596 | 0.593 |
+| ESCALATE hit rate | 0.800 | 0.795 |
+
+**It did not help.** Every figure moved marginally down. The adjudication deltas
+are under 0.01 on n=2,759 — noise. The AUC change is ~1.4 standard errors on
+n=150 and is not distinguishable from chance.
+
+The fix was kept regardless. A system whose evidence packs tell an examiner
+"0% transferred out" about an account with nothing to transfer is making a false
+statement, and that is disqualifying independent of AUC. Recording this because
+a team optimising for a leaderboard would have reverted it.
 
 ---
 
@@ -261,14 +330,15 @@ be re-chosen from this sweep without re-running a single model call.
 **The model does not beat human reviewers head-to-head.** §3. It trades
 precision for recall.
 
-**AUC 0.604 is modest.** The oracle ceiling is 0.868. Substantial signal in the
-record is not being extracted.
+**AUC is 0.608 on the invisible population and 0.541 on alerts.** The oracle
+ceiling is 0.868. Substantial signal in the record is not being extracted, and
+on the alert population the model ranks barely better than chance.
 
-**The deprioritise band contains 191 genuinely suspicious weeks** (22.6%).
+**The deprioritise band contains 199 genuinely suspicious weeks** (23.4%).
 It is a ranking, not a dismissal.
 
 **Probabilities are range-compressed.** Across the whole adjudication the model
-never exceeded 0.78 and rarely went below 0.25. It does not express strong
+never exceeded 0.78 for any case, clean or dirty, and rarely went below 0.25. It does not express strong
 confidence, which limits how sharp the escalation band can become.
 
 **Clean skins are not detected, by design.** The model scores them 0.480 against
@@ -291,7 +361,80 @@ not a result.
 
 ---
 
-## 8. Reproducing
+## 8. Evidence packs
+
+Adjudication produces a ranked list. A ranked list is not actionable: an
+examiner asks why this case, what rule applied at the time, what was visible
+then, and how they know the record has not been edited since.
+
+**687 packs** were built for the escalation band, covering **111 customers** and
+**₹61.4 crore**. Each contains the case, the finding with both sides of the
+model's reasoning, the policy version in force at the time *and* today (each
+resolved by temporal join, with citation), the arithmetic of why no alert fired,
+the point-in-time evidence snapshot, and provenance.
+
+Packs are hash-chained: `chain_hash(n) = SHA2(chain_hash(n−1) || content_hash(n))`.
+Editing, removing or reordering any pack breaks every hash after it.
+`AUDIT.V_CHAIN_VERIFICATION` recomputes the chain from the payloads and returns
+a verdict rather than an assertion.
+
+```
+chained 687 packs, head=a0d16fadeae3ba73350d22606eacf3b7b8efdf3b01a4fbf1b2e401496a916e3e
+verdict: INTACT   (0 payloads tampered, 0 links broken, 0 hashes mismatched)
+```
+
+An empty table returns `EMPTY — NOTHING TO VERIFY`, not `INTACT`. False
+assurance is the one failure mode an integrity check must not have.
+
+### The packs caught a defect the metrics could not
+
+The `outward_transfer_ratio` bug in §6 was invisible to every aggregate we
+tracked. AUC 0.604 and recall 0.856 looked like ordinary model limitations. It
+surfaced only on reading one case, where the model's mitigating argument was
+that funds had not been moved out — on an account that had no prior funds to
+move.
+
+A probability is unfalsifiable. A pack that states its evidence and its
+reasoning can be checked, and checking it found an error in our own feature
+engineering. That is an argument for the artifact, not an anecdote about it.
+
+### An open provenance gap
+
+Nothing currently prevents a pack pairing evidence at feature-version *N* with
+reasoning generated at version *N−1* — which is exactly what happened between
+the fix and the re-run. The provenance block records the model and thresholds
+but no feature-schema version, so the inconsistency was invisible to the system
+and caught only by eye. A hash of the feature view definition, recorded on both
+the adjudication and the pack and checked before a pack is built, would convert
+"we noticed" into "it cannot happen". Not yet implemented.
+
+---
+
+## 9. What SQL found without the model
+
+The invisible population concentrates in two of eight branches — Karol Bagh
+(22.5%) and Surat Ring Road (19.9%), **42.4% between them**. That is visible
+from deterministic SQL with no model involved.
+
+The model's escalations concentrate slightly more tightly, but only in one of
+the two:
+
+| branch | % of escalations | % of population | lift |
+|---|---|---|---|
+| Karol Bagh | 29.5% | 22.5% | 1.31× |
+| Surat Ring Road | 20.2% | 19.9% | 1.02× |
+
+The generator does cluster roughly half of all mules into these two branches,
+and branch identity appears nowhere in the prompt. But **the model did not
+discover that pattern** — one branch shows modest lift, the other none. The
+apparent concentration is largely inherited from a population that was already
+concentrated.
+
+Stated because the opposite claim would have been an attractive one to make.
+
+---
+
+## 10. Reproducing
 
 ```bash
 uv run --with numpy --with pandas generator/generate.py --scale slice
