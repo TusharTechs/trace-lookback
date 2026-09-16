@@ -1,0 +1,5 @@
+.certs/
+generator/out/
+__pycache__/
+*.pyc
+.venv/
