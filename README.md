@@ -134,13 +134,18 @@ connection. Knowing where a control stops is part of using it honestly.
 - Point-in-time replay engine in SQL, validated against the generator
 - Cortex adjudication over the full invisible population, with a calibrated operating point
 - Hash-chained evidence packs with an examiner-runnable integrity check
-- Column masking policies (Enterprise), Restricted Session Scope
+- RBAC that was tested by trying to break it: the adjudicating role cannot read
+  ground truth (`Schema 'TRACE_DB.EVAL' does not exist or not authorized`) and
+  cannot rewrite evidence (`Insufficient privileges ... must have UPDATE
+  granted`) — the database refusing, not our hook
+- Column masking: PII redacted per role while the content hash stays identical
+- A `PreToolUse` hook blocking every mutating statement against `AUDIT.*`,
+  12 unit tests, no carve-out for our own code
 
 **Not built yet** — named plainly rather than implied:
 
 - Streamlit interface
 - Cortex Agent / Cortex Search over a policy corpus, and the LLM→predicate compiler with human certification
-- `PreToolUse` hook enforcing append-only writes to the audit log
 - CI regression gate via `cortex exec` (headless tool allowlisting is unresolved)
 
 ---
@@ -155,6 +160,9 @@ sql/12_replay_engine.sql     point-in-time features, with a validation gate
 sql/13_adjudicate.sql        recalibration, then full adjudication
 sql/14_evidence_packs.sql    hash-chained evidence packs + integrity check
 sql/15_final_metrics.sql     AUC, lift curve, branch concentration
+sql/16_append_only_chain.sql hash chain, INSERT-only
+sql/17_roles_and_masking.sql roles, masking, isolation tests (run in Snowsight)
+.cortex/hooks/               PreToolUse guard on the AUDIT schema
 sql/03–10                    superseded; retained as history
 generator/generate.py        synthetic corpus (seeded, deterministic)
 generator/load.py            optional Python loader
@@ -174,11 +182,15 @@ part of the argument.
 uv run --with numpy --with pandas generator/generate.py --scale slice
 ```
 
-Then, from the repo root, run `sql/01`, `02`, `11`, `12`, `13`, `14`, `15` in
-order — through CoCo CLI, Snowsight, or any Snowflake client. `PUT` paths are
+Then, from the repo root, run `sql/01`, `02`, `11`, `12`, `13`, `14`, `15`, `16`
+in order — through CoCo CLI, Snowsight, or any Snowflake client. `PUT` paths are
 relative to the repo root.
 
 `13` makes ~2,900 Cortex calls (~$15); the rest are ordinary SQL.
+
+`sql/17_roles_and_masking.sql` is run separately, **in Snowsight as
+ACCOUNTADMIN** — four of its statements are refused by this project's own
+controls, which is the point rather than a defect.
 
 Requires Snowflake **Enterprise** (masking and row-access policies) in a region
 with Cortex model availability. Developed on `AWS_US_WEST_2`.

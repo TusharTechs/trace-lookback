@@ -67,7 +67,7 @@ WITH cases AS (
         pit.deposits_just_under_round_pct, pit.distinct_branches_used,
         pit.outward_transfer_ratio, pit.weeks_since_cash_activity_began,
         pit.history_weeks_available,
-        c.full_name, c.pan, c.branch_id
+        c.branch_id
     FROM EVAL.ADJUDICATION a
     JOIN CORE.V_POINT_IN_TIME_FEATURES pit
       ON pit.customer_id = a.customer_id AND pit.week_start = a.week_start
@@ -112,8 +112,13 @@ WITH cases AS (
             'case', OBJECT_CONSTRUCT(
                 'case_ref',          e.customer_id || '|' || TO_VARCHAR(e.week_start, 'YYYY-MM-DD'),
                 'customer_id',       e.customer_id,
-                'customer_name',     e.full_name,      -- masked for unprivileged roles
-                'pan',               e.pan,            -- masked for unprivileged roles
+                -- PII is REFERENCED, never embedded. A masking policy applies at
+                -- query time to a base column; a VARIANT snapshot built from
+                -- cleartext is frozen and ungovernable. Name and PAN are
+                -- resolved at render time through AUDIT.V_EVIDENCE_PACK_RENDER,
+                -- which joins CORE.CUSTOMERS so the policy actually engages.
+                -- It also keeps content_hash identical for every viewer:
+                -- integrity should not depend on who is looking.
                 'branch_id',         e.branch_id,
                 'window_start',      e.week_start,
                 'window_end',        e.week_end,
@@ -225,8 +230,6 @@ SELECT
     seq,
     case_ref,
     ROUND(p_suspicious, 2)                              AS p,
-    payload:case:customer_name::STRING                  AS customer_name,
-    payload:case:pan::STRING                            AS pan,
     payload:why_no_alert_was_raised:explanation::STRING AS why_missed,
     payload:rule_as_was:policy_version_id::STRING       AS rule_then,
     payload:rule_as_was:citation::STRING                AS citation_then,

@@ -434,7 +434,120 @@ Stated because the opposite claim would have been an attractive one to make.
 
 ---
 
-## 10. Reproducing
+## 10. Governance, verified rather than asserted
+
+Three controls, each tested by trying to break it.
+
+### Ground truth is unreachable by the adjudicating role
+
+`TRACE_INVESTIGATOR` holds `SELECT` on `CORE`, `POLICY` and `AUDIT`, `INSERT` on
+the audit log, and **nothing at all on `EVAL`**. Attempting to read the answer
+key as that role:
+
+```
+SQL compilation error: Schema 'TRACE_DB.EVAL' does not exist or not authorized.
+```
+
+Not "no rows returned" — the schema does not resolve. This is what makes every
+accuracy figure in this document falsifiable: the role that adjudicated
+provably could not have seen the labels it was scored against.
+
+### Evidence cannot be rewritten, by the database
+
+```sql
+UPDATE AUDIT.EVIDENCE_PACK SET payload = PARSE_JSON('{"tampered":true}') WHERE seq = 1;
+```
+
+```
+SQL access control error: Insufficient privileges to operate on table 'EVIDENCE_PACK'.
+Your primary role TRACE_INVESTIGATOR must have UPDATE granted on
+TABLE TRACE_DB.AUDIT.EVIDENCE_PACK.
+```
+
+An **access-control** error, not a constraint violation, and raised by Snowflake
+rather than by our hook. The `PreToolUse` hook (§ below) refuses the same
+statement client-side; this is the control underneath it.
+
+### PII is masked, integrity is not
+
+The same two packs, same query, two roles:
+
+| role | customer_name | customer_pan | content_hash |
+|---|---|---|---|
+| ACCOUNTADMIN | *real name* | *real PAN* | 7349a342ffcb |
+| TRACE_INVESTIGATOR | `REDACTED` | `XXXXXX775I` | 7349a342ffcb |
+
+Identity is redacted; the hash is unchanged. An analyst who cannot read the
+subject can still verify the record has not been altered — which is what lets a
+junior reviewer work a case without handling PII.
+
+This works only because **evidence packs reference the customer rather than
+embedding identity**. An earlier version wrote `customer_name` and `pan` into
+the pack payload at build time. A masking policy governs a base column; it
+cannot reach inside a materialised VARIANT. Attaching the policy would have
+produced a demonstration that looked governed while every pack still carried
+PANs in clear. Identity is now resolved at query time through
+`AUDIT.V_EVIDENCE_PACK_RENDER`.
+
+### `USE ROLE` does not test isolation — and nearly fooled us
+
+The first attempt at the immutability test appeared to pass. It did not.
+
+A Snowflake session carries a **primary role and secondary roles**, and users
+default to `DEFAULT_SECONDARY_ROLES = ('ALL')`. Every role granted to the user
+stays active alongside whatever `USE ROLE` selects. Switching to
+`TRACE_INVESTIGATOR` while `ACCOUNTADMIN` remained active as a secondary role
+tested nothing — the session still held every privilege it started with.
+
+The `UPDATE` was authorized and executed, failing only on a `NOT NULL`
+constraint:
+
+```
+DML operation to table AUDIT.EVIDENCE_PACK failed on column PAYLOAD
+with error: NULL result in a non-nullable column
+```
+
+That reads like a rejection and is not one. Two separate mistakes compounded:
+the test set `payload = NULL`, so a data constraint could mask the absence of a
+privilege check; and `USE SECONDARY ROLES NONE` was missing, so no privilege
+check was going to happen.
+
+Both are fixed: the test now writes valid JSON, so only privileges can stop it,
+and drops secondary roles first. Recorded because `USE ROLE` is the obvious way
+to demonstrate RBAC isolation, and on default Snowflake settings it demonstrates
+nothing.
+
+### The hook, and where it stops
+
+`.cortex/hooks/protect-audit.py` refuses `UPDATE`, `DELETE`, `MERGE`,
+`TRUNCATE`, `DROP`, `ALTER`, `CREATE OR REPLACE` and `GRANT` against `AUDIT.*`
+before the statement reaches Snowflake. Twelve unit tests, including a
+destructive statement hidden behind a comment and one buried second in a batch.
+Verified live: the agent was refused and responded by proposing a corrective
+*insert* instead.
+
+Two exclusions are deliberate, not over-reach:
+
+- **`GRANT` on audit objects** — an agent that can grant privileges on audit
+  data can grant itself write access.
+- **`CREATE OR REPLACE VIEW` in `AUDIT`** — `AUDIT.V_CHAIN_VERIFICATION` lives
+  there. An agent able to redefine it could make tampering report `INTACT`. The
+  definition of "verified" is not the agent's to change.
+
+A consequence worth stating: **the evidence schema can no longer be altered
+through the agent at all.** `sql/17_roles_and_masking.sql` must be run by a
+human in Snowsight. That is the control working, and no exception was carved
+out to make development more convenient.
+
+What the hook does **not** cover, stated because an undocumented boundary is
+worse than no control: it inspects client-submitted SQL, so a stored procedure
+is opaque to it; and like Snowflake's Restricted Session Scope it does not cover
+Bash, Python or MCP tools opening their own connection. The real control is the
+role that lacks `UPDATE` — demonstrated above. The hook is defence in depth.
+
+---
+
+## 11. Reproducing
 
 ```bash
 uv run --with numpy --with pandas generator/generate.py --scale slice
