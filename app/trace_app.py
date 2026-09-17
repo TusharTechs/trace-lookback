@@ -445,15 +445,16 @@ elif page.startswith("6"):
 
     st.divider()
     st.subheader("Case action log")
+    # The same view sql/27's tamper drills are judged by. If the app rolled the
+    # verdict up itself there would be two definitions of "verified", and the
+    # drills could pass against one while the app showed the other.
     al, al_err = try_q("""
-        SELECT COUNT(*) AS actions,
-               COALESCE(SUM(CASE WHEN link_intact     THEN 0 ELSE 1 END), 0) AS broken,
-               COALESCE(SUM(CASE WHEN hash_recomputes THEN 0 ELSE 1 END), 0) AS mismatched,
-               COALESCE(SUM(CASE WHEN no_fork         THEN 0 ELSE 1 END), 0) AS forked
-        FROM TRACE_DB.AUDIT.V_ACTION_LOG_VERIFICATION
+        SELECT actions, broken_links AS broken, hash_mismatches AS mismatched,
+               forked_rows AS forked
+        FROM TRACE_DB.AUDIT.V_ACTION_LOG_VERDICT
     """)
     if al_err:
-        st.caption("_Action log views not yet created — run sql/26 in Snowsight._")
+        st.caption("_Action log views not yet created — run sql/26 and sql/27 in Snowsight._")
     else:
         r = al.iloc[0]
         n = int(r["ACTIONS"])

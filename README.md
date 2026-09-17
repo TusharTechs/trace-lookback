@@ -236,11 +236,12 @@ so they work unchanged on every platform.
 | `sql/22_extraction_staged.sql` | predicate compiler | pennies |
 | `sql/23_certification_gate.sql` | certification, and lapse on amendment | — |
 | `sql/26_action_log_rebuild.sql` | append-only case actions, chained | — |
+| `sql/27_tamper_drill.sql` | three tamper drills — proves the detector fires | — |
 | `sql/15_final_metrics.sql` | AUC, lift curve, branch concentration | — |
 
-`sql/17_roles_and_masking.sql` and `sql/26_action_log_rebuild.sql` are run **by a human in
-Snowsight** — they create objects in `AUDIT`, which this project's own controls refuse from the
-agent. That is the point rather than a defect.
+`sql/17_roles_and_masking.sql`, `sql/26_action_log_rebuild.sql` and `sql/27_tamper_drill.sql` are
+run **by a human in Snowsight** — they create objects in `AUDIT`, which this project's own controls
+refuse from the agent. That is the point rather than a defect.
 
 `sql/03`–`10`, `21`, `24` and `25` are superseded and kept as history: two failed corpus designs, a
 measurement error, a debugging session, and an action log whose hash chain reported `TAMPERED` on
@@ -278,6 +279,7 @@ sql/17                          roles, masking, isolation tests (Snowsight, by a
 sql/18                          counterfactual replay: any threshold, any window
 sql/19                          semantic view, policy corpus, Cortex Agent
 sql/20-23, 26                   predicate compiler, certification gate, case action log
+sql/27                          tamper drills against the action log (Snowsight, by a human)
 sql/03-10, 21, 24-25            superseded; retained as history
 .cortex/skills/                 four CoCo skills
 .cortex/agents/                 two read-only subagents
