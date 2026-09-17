@@ -75,6 +75,8 @@ nothing preceded them.
 
 # Do not
 
-- Run `PUT` via `snow` or SnowSQL — not installed, and TLS fails on inspecting
-  networks. CoCo's `sql_execute` handles `PUT` natively with repo-relative paths.
+- Run `PUT` via `snow` or SnowSQL — not installed, and the Python connector's
+  TLS fails on this machine regardless of network (endpoint agent + pyOpenSSL;
+  see `generator/load.py`). CoCo's `sql_execute` handles `PUT` natively with
+  repo-relative paths.
 - Re-run a stage "to be safe". Stage 1 is destructive; stage 6 costs money.

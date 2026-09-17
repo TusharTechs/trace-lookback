@@ -66,8 +66,14 @@ resolve inside embedded SQL. Assign to a local variable and bind with `:`.
 
 **`PUT` works natively through CoCo's `sql_execute`,** with paths relative to
 the repo root. Do not reach for `snow` or SnowSQL — neither is installed, and
-the Python connector cannot complete a TLS handshake on networks that inspect
-traffic.
+the Python connector cannot complete a TLS handshake on this machine.
+
+Not a network property, so switching networks does not help: an endpoint agent
+(Netskope) holds roots in the macOS System keychain and intercepts everywhere.
+CoCo and Snowsight read the OS trust store and are fine; the connector routes
+TLS through pyOpenSSL, which reads a CA bundle file instead. `truststore` does
+not fix it — it patches the `ssl` module that this path bypasses — and neither
+does `REQUESTS_CA_BUNDLE`. Full diagnosis in `generator/load.py`.
 
 **`AI_COMPLETE` with `response_format` returns an OBJECT, not a string.**
 Wrapping it in `TRY_PARSE_JSON` yields NULL, and `FLATTEN` over NULL produces

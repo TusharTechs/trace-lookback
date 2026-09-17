@@ -9,15 +9,45 @@ the agent Restricted Session Scope -- CoCo's own guardrails banner says as
 much. That is deliberate here (loading is an ACCOUNTADMIN build step), but it
 is exactly the gap the PreToolUse hook exists to close for the audit log.
 
-NOT the path used to build this project. On the network TRACE was developed
-on, TLS is terminated by an inspecting proxy and this connector never
-completed a handshake -- truststore and REQUESTS_CA_BUNDLE were both tried.
-The corpus was loaded through CoCo CLI's own `sql_execute` instead, which is
-what `sql/11_reload_and_score_v5.sql` documents.
+NOT the path used to build this project, and the reason is worth stating
+precisely because the obvious diagnosis is wrong.
 
-It is kept because it is the right tool on a normal network and because the
-governance note above is worth stating. It is, however, the less-tested of
-the two paths: if it fails for you, use the CoCo route in the README.
+This machine runs Netskope, installed as a managed endpoint agent with its
+roots in the macOS System keychain (`eproxy.caadmin.netskope.com` and
+`*.fra2.goskope.com`). It therefore intercepts TLS on **any** network, not
+just a corporate one -- the same failure reproduces from a home connection.
+Chrome, Snowsight and CoCo CLI all connect happily, because they consult the
+OS trust store and that store trusts Netskope.
+
+The Snowflake connector does not. It routes TLS through
+`snowflake/connector/vendored/urllib3/contrib/pyopenssl.py`, and pyOpenSSL
+reads a CA **bundle file** rather than the operating system's trust store.
+The handshake fails at `/oauth/token-request` with `certificate verify
+failed`.
+
+Two fixes were tried and neither works, which is why they are recorded here
+rather than left as folklore:
+
+  * `truststore.inject_into_ssl()` patches Python's own `ssl` module. The
+    pyOpenSSL path bypasses that module entirely, so the injection below has
+    no effect on this connector. It is retained only because it is correct
+    for other libraries in the same process.
+
+  * `REQUESTS_CA_BUNDLE`, `SSL_CERT_FILE` and `CURL_CA_BUNDLE` pointed at a
+    combined bundle -- certifi plus both keychains, 290 certificates
+    including 6 Netskope roots -- change nothing either. The connector builds
+    its own TLS parameters in
+    `snowflake/connector/ssl_wrap_socket.ssl_wrap_socket_with_cert_revocation_checks`
+    and never consults those variables.
+
+What was used instead: CoCo CLI's `sql_execute` for the build (documented in
+`sql/11_reload_and_score_v5.sql`), and Snowsight result downloads for the
+public-demo export (`sql/28_export_public_snapshot.sql`).
+
+This file is kept because it is the right tool on a machine without an
+intercepting endpoint agent, and because the governance note above is worth
+stating. It is the untested path here: if it fails for you the same way, the
+CoCo and Snowsight routes both work.
 
 Usage:
     uv run --with 'snowflake-connector-python[pandas]' --with truststore generator/load.py
@@ -29,16 +59,18 @@ import os
 import sys
 from pathlib import Path
 
-# Some networks terminate TLS at an inspecting proxy, which re-signs the
-# Snowflake certificate with a private root. The OS trust store carries that
-# root -- browsers and CoCo CLI connect fine -- but Python's bundled certifi
-# does not, and the handshake fails with "certificate verify failed". Route
-# SSL through the OS trust store. Must run before snowflake.connector imports.
+# Routes Python's ssl module through the OS trust store, which helps where TLS
+# is terminated by an inspecting proxy whose root the OS trusts.
+#
+# It does NOT rescue the Snowflake connector: that path goes through pyOpenSSL,
+# which reads a CA bundle file instead of the ssl module this patches. See the
+# module docstring. Kept because it is correct for other libraries here, and
+# because deleting it would invite someone to re-add it as the fix.
 try:
     import truststore
 
     truststore.inject_into_ssl()
-except ImportError:  # not needed on a network without TLS inspection
+except ImportError:  # not needed where nothing is intercepting TLS
     pass
 
 import pandas as pd
