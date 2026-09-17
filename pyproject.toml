@@ -1,0 +1,13 @@
+[project]
+name = "trace-lookback"
+version = "1.0.0"
+description = "Regulatory lookback and decision replay engine for AML, on Snowflake Cortex"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26", "pandas>=2.1"]
+
+[project.optional-dependencies]
+load = ["snowflake-connector-python[pandas]>=3.12", "truststore>=0.9"]
+dev  = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

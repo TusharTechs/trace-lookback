@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 120" width="520" height="120" role="img" aria-label="TRACE">
+  <title>TRACE</title>
+  <!-- The timeline. A solid rule, a gap where the threshold was wrong, then the rule restored. -->
+  <g fill="none" stroke-linecap="round">
+    <line x1="24" y1="60" x2="96" y2="60" stroke="#1f6feb" stroke-width="7"/>
+    <line x1="96" y1="60" x2="152" y2="60" stroke="#1f6feb" stroke-width="7"
+          stroke-dasharray="2 12" opacity="0.35"/>
+    <line x1="152" y1="60" x2="196" y2="60" stroke="#1f6feb" stroke-width="7"/>
+  </g>
+  <!-- What was missed, recovered. -->
+  <circle cx="124" cy="60" r="13" fill="none" stroke="#d1242f" stroke-width="5"/>
+  <circle cx="124" cy="60" r="4"  fill="#d1242f"/>
+  <text x="228" y="80" font-family="ui-sans-serif,-apple-system,Segoe UI,Helvetica,Arial,sans-serif"
+        font-size="62" font-weight="700" letter-spacing="10" fill="#0d1117">TRACE</text>
+</svg>

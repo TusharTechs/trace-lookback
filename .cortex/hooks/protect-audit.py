@@ -58,17 +58,46 @@ AUDIT_REF = re.compile(
 
 
 def strip_noise(sql: str) -> str:
-    sql = re.sub(r"--[^\n]*", " ", sql)
+    # A line comment ends at a real newline OR at a literal backslash-n, so an
+    # already-escaped payload cannot hide a statement behind a comment.
+    sql = re.sub(r"--(?:(?!\\n)[^\n])*", " ", sql)
     sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.S)
+    sql = sql.replace("\\n", " ")
     return re.sub(r"\s+", " ", sql).strip()
+
+
+def _strings(node):
+    """Yield every string value anywhere in the payload."""
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for v in node.values():
+            yield from _strings(v)
+    elif isinstance(node, (list, tuple)):
+        for v in node:
+            yield from _strings(v)
 
 
 def extract_sql(payload: dict) -> str:
     """CoCo's sql_execute input schema is not documented here, so rather than
-    guess a field name and silently miss the statement, serialise the whole
-    tool_input and scan it. Over-inclusive by design."""
+    guess a field name and silently miss the statement, collect every string in
+    tool_input. Over-inclusive by design.
+
+    This walks the structure instead of calling json.dumps, and that is a
+    security fix rather than a style choice. Serialising escapes newlines into
+    the two characters backslash-n, after which the comment-stripping regex
+    `--[^\\n]*` finds no real newline to stop at and swallows the rest of the
+    statement. A line comment followed by a newline therefore hid everything
+    after it:
+
+        -- routine
+        DELETE FROM AUDIT.EVIDENCE_CHAIN
+
+    was reported as safe. Caught by tests/test_hook.py::test_blocked."""
     ti = payload.get("tool_input", payload)
-    return ti if isinstance(ti, str) else json.dumps(ti)
+    if isinstance(ti, str):
+        return ti
+    return "\n".join(_strings(ti))
 
 
 def offending_statements(sql: str):

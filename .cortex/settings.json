@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .cortex/hooks/protect-audit.py",
+            "command": "python .cortex/hooks/run-guard.py",
             "timeout": 15
           }
         ]
