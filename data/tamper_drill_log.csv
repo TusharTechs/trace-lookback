@@ -1,0 +1,6 @@
+ORD,DRILL,ATTACK,ACTIONS,BROKEN_LINKS,HASH_MISMATCHES,FORKED_ROWS,VERDICT,CAUGHT_BY
+0,baseline,nothing altered,4,0,0,0,INTACT,—
+1,forged append,"insert a fake closure, linked correctly to the head",5,0,1,0,TAMPERED,hash recomputation
+2,reworded decision,rewrite the FIU escalation as a routine clearance,4,0,1,0,TAMPERED,hash recomputation
+3,deleted record,remove the FIU escalation entirely,3,1,0,0,TAMPERED,link walk
+4,restored,reseeded after the drills,4,0,0,0,INTACT,—

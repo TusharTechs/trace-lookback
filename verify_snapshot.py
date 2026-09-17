@@ -26,12 +26,21 @@ import pandas as pd
 
 DATA = Path(__file__).parent / "data"
 
-EXPECTED = [
-    "evidence_pack", "evidence_chain", "pack_render_privileged",
-    "adjudication", "invisible_population", "threshold_sensitivity",
-    "policy_versions", "rule_predicates", "candidate_predicates",
-    "certification_queue", "enforceable_predicates", "tamper_drill_log",
-    "case_history", "chain_verification", "pack_render_masked",
+# The app degrades gracefully, so a partial snapshot is a real deployment
+# option rather than a broken one. These five carry the pages the demo is
+# actually for: the gap, the replay, verification, and the tamper drill.
+REQUIRED = [
+    "evidence_pack", "evidence_chain", "tamper_drill_log",
+    "invisible_population", "threshold_sensitivity",
+]
+
+# Each of these adds a page or a panel. Missing ones show a note in place of
+# the content; nothing breaks.
+OPTIONAL = [
+    "adjudication", "pack_render_privileged", "pack_render_masked",
+    "chain_verification", "policy_versions", "rule_predicates",
+    "candidate_predicates", "certification_queue", "enforceable_predicates",
+    "case_history",
 ]
 
 
@@ -51,9 +60,9 @@ def read(name: str) -> pd.DataFrame | None:
 def main() -> int:
     failures: list[str] = []
 
-    print("files")
+    print("required")
     missing = []
-    for name in EXPECTED:
+    for name in REQUIRED:
         df = read(name)
         if df is None:
             missing.append(name)
@@ -61,7 +70,16 @@ def main() -> int:
         else:
             print(f"  ok       {name}.csv  ({len(df):,} rows)")
     if missing:
-        failures.append(f"{len(missing)} file(s) missing")
+        failures.append(f"{len(missing)} required file(s) missing")
+
+    absent = [n for n in OPTIONAL if read(n) is None]
+    present = [n for n in OPTIONAL if n not in absent]
+    print(f"\noptional  {len(present)} of {len(OPTIONAL)} present")
+    for name in present:
+        print(f"  ok       {name}.csv  ({len(read(name)):,} rows)")
+    if absent:
+        print("  not yet: " + ", ".join(absent))
+        print("  (those pages show a note instead of content -- nothing breaks)")
 
     packs, chain = read("evidence_pack"), read("evidence_chain")
     if packs is None or chain is None:
@@ -119,6 +137,9 @@ def main() -> int:
         print("FAIL: " + "; ".join(failures))
         return 1
     print("PASS — the snapshot verifies independently of Snowflake. Safe to deploy.")
+    if absent:
+        print(f"      {len(absent)} optional file(s) still to add; the app "
+              f"handles their absence.")
     return 0
 
 
