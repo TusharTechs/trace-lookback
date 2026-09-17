@@ -1,4 +1,17 @@
 -- ============================================================================
+-- SUPERSEDED BY sql/26_action_log_rebuild.sql — retained as history.
+--
+-- This version used AUTOINCREMENT `seq` as the chain's ordering key and hashed
+-- a CURRENT_TIMESTAMP() separate from the one stored in event_ts. Both are
+-- defects: the first forked the chain across sessions, the second made the
+-- hashes impossible to recompute independently. The verification below caught
+-- the fork (TAMPERED, 2 broken links) on first use. Diagnosis: sql/25.
+-- Write-up: EVALUATION.md, "The action log reported TAMPERED on its own data".
+--
+-- Do not run this. Run sql/26 instead.
+-- ============================================================================
+
+-- ============================================================================
 -- 24_case_action_log.sql — record what investigators do, append-only.
 --
 -- AUDIT.AUDIT_LOG was created in sql/01, granted INSERT to TRACE_INVESTIGATOR

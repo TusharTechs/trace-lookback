@@ -545,6 +545,71 @@ is opaque to it; and like Snowflake's Restricted Session Scope it does not cover
 Bash, Python or MCP tools opening their own connection. The real control is the
 role that lacks `UPDATE` — demonstrated above. The hook is defence in depth.
 
+### The action log reported TAMPERED on its own data, and was right
+
+`AUDIT.AUDIT_LOG` records what an investigator did with a case — assigned,
+escalated to FIU, closed, superseded — chained the same way the evidence is.
+The first time it was exercised, eight recorded actions, it reported
+**`TAMPERED`, 2 broken links**, with nobody having edited anything.
+
+The temptation was to assume the verification was too strict. Diagnosis
+(`sql/25_chain_diagnosis.sql`) found two genuine defects, both ours.
+
+**1. The chain head was read using a column that is not monotonic.**
+`RECORD_CASE_ACTION` found its predecessor with `MAX_BY(row_hash, seq)`, where
+`seq` was `AUTOINCREMENT`. Snowflake allocates autoincrement values in
+per-session ranges and guarantees uniqueness, *not* insertion order. The
+observed sequence was `1, 2, 101, 102, 201, 202, 301, 401` — four of eight rows
+out of chronological order, because a second session's allocation interleaved
+with the first's.
+
+The consequence is exact. A row inserted at `11:12:27` received `seq = 2`. The
+next insert, three seconds later, computed `MAX_BY(row_hash, seq)` — and
+because `2 < 201`, it read the *old* head. Two rows then recorded the same
+predecessor `ccee2e0f…` and **the chain forked.** One append silently fell out
+of the chain.
+
+**2. The hash covered a value that could not be reproduced.**
+The procedure hashed `TO_VARCHAR(CURRENT_TIMESTAMP())` while `event_ts` took
+its own `DEFAULT CURRENT_TIMESTAMP()` — two separate clock reads, microseconds
+apart. So no row's hash could be recomputed from the row as stored. The chain
+could only ever be confirmed by the code that wrote it.
+
+That second one is the more serious finding, and it was not what the
+`TAMPERED` verdict was pointing at. An integrity check that cannot be
+independently recomputed is not an integrity check; it is a receipt. Had the
+fork not forced us to look, this would have shipped, and a judge or an examiner
+recomputing a hash by hand would have found every row failing.
+
+`sql/26_action_log_rebuild.sql` fixes both: `link_no` is assigned by the
+procedure rather than the database, and the clock is read once into a variable
+used for both the hash and the stored column, formatted explicitly
+(`YYYY-MM-DD HH24:MI:SS.FF3`) so the recomputation is byte-identical.
+Verification now runs three checks instead of one — link, recomputed hash, and
+no two rows sharing a predecessor. The third is independent of the ordering key
+and is what would catch a fork again even if a future ordering key were wrong.
+
+**The eight existing rows were discarded rather than migrated.** Re-chaining
+them would have produced a consistent chain over records whose linkage was
+never valid, which is a worse artefact than a detected break.
+
+**A limitation that remains, stated rather than engineered around.** Reading
+the head and writing the row are still two statements, so two genuinely
+concurrent callers could read the same head. Trace's append path is
+single-writer and this is not reachable in the demo, but a production
+deployment would need a Snowflake sequence or a serialized transaction. It is
+listed here rather than in a comment because the failure mode above is exactly
+what an unstated concurrency assumption looks like when it breaks.
+
+The evidence chain (`AUDIT.EVIDENCE_CHAIN`) does not share either defect: it is
+built in one pass by `BUILD_EVIDENCE_CHAIN()` over an ordered scan, and hashes
+the pack payload rather than a clock read. It was re-verified after this fix
+and remains `INTACT` at head `a0d16fadeae3ba73350d22606eacf3b7b8efdf3b01a4fbf1b2e401496a916e3e`.
+
+This is recorded in full because a chain that has only ever reported `INTACT`
+is not evidence that it works. This one reported a fault, on our own data,
+before anyone else saw it — and the fault was real.
+
 ---
 
 ## 11. Reproducing
@@ -562,9 +627,22 @@ Then, in order, against Snowflake:
 | `sql/11_reload_and_score_v5.sql` | stage and load the corpus |
 | `sql/12_replay_engine.sql` | point-in-time features + validation gate |
 | `sql/13_adjudicate.sql` | recalibration, then full adjudication |
+| `sql/14_evidence_packs.sql` | evidence packs (PII referenced, not embedded) |
+| `sql/16_append_only_chain.sql` | hash chain over the packs |
+| `sql/17_roles_and_masking.sql` | **Snowsight** — roles, masking policies |
+| `sql/18_counterfactual_replay.sql` | threshold sensitivity, ₹5L → ₹12L |
+| `sql/19_semantic_view_and_agent.sql` | semantic view, Cortex Search, agent |
+| `sql/22_extraction_staged.sql` | predicate extraction from policy prose |
+| `sql/23_certification_gate.sql` | human certification before enforcement |
+| `sql/26_action_log_rebuild.sql` | **Snowsight** — case action log, chained |
+
+`sql/17` and `sql/26` create objects in `AUDIT` and must be run by a human in
+Snowsight: the hook refuses them from the agent, which is the control working.
 
 Scripts `03`–`10` are superseded and retained as history: they record the two
-corpus failures and the measurement error described above.
+corpus failures and the measurement error described above. `sql/24` and
+`sql/25` are likewise retained — `24` is the action log as first written, `25`
+the diagnosis that found the fork in it. `sql/26` supersedes `24`.
 
 Raw outputs are in `eval/`.
 

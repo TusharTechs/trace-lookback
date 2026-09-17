@@ -235,14 +235,18 @@ so they work unchanged on every platform.
 | `sql/19_semantic_view_and_agent.sql` | semantic view, policy corpus, Cortex Agent | pennies |
 | `sql/22_extraction_staged.sql` | predicate compiler | pennies |
 | `sql/23_certification_gate.sql` | certification, and lapse on amendment | — |
-| `sql/24_case_action_log.sql` | append-only case actions | — |
+| `sql/26_action_log_rebuild.sql` | append-only case actions, chained | — |
 | `sql/15_final_metrics.sql` | AUC, lift curve, branch concentration | — |
 
-`sql/17_roles_and_masking.sql` is run **by a human in Snowsight** — four of its statements are
-refused by this project's own controls, which is the point rather than a defect.
+`sql/17_roles_and_masking.sql` and `sql/26_action_log_rebuild.sql` are run **by a human in
+Snowsight** — they create objects in `AUDIT`, which this project's own controls refuse from the
+agent. That is the point rather than a defect.
 
-`sql/03`–`10` and `21` are superseded and kept as history: two failed corpus designs, a measurement
-error, and a debugging session. That history is part of the argument.
+`sql/03`–`10`, `21`, `24` and `25` are superseded and kept as history: two failed corpus designs, a
+measurement error, a debugging session, and an action log whose hash chain reported `TAMPERED` on
+its own data — correctly. See
+[the write-up](EVALUATION.md#the-action-log-reported-tampered-on-its-own-data-and-was-right).
+That history is part of the argument.
 
 ### 4 · The app
 
@@ -273,8 +277,8 @@ sql/11-16                       load, replay engine, adjudication, packs, chain,
 sql/17                          roles, masking, isolation tests (Snowsight, by a human)
 sql/18                          counterfactual replay: any threshold, any window
 sql/19                          semantic view, policy corpus, Cortex Agent
-sql/20-24                       predicate compiler, certification gate, case action log
-sql/03-10, 21                   superseded; retained as history
+sql/20-23, 26                   predicate compiler, certification gate, case action log
+sql/03-10, 21, 24-25            superseded; retained as history
 .cortex/skills/                 four CoCo skills
 .cortex/agents/                 two read-only subagents
 .cortex/hooks/                  PreToolUse guard on the AUDIT schema

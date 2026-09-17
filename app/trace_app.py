@@ -278,7 +278,7 @@ elif page.startswith("4"):
     history = try_q(f"""
         SELECT event_ts, actor, action, note
         FROM TRACE_DB.AUDIT.V_CASE_HISTORY
-        WHERE case_ref = '{ref}' ORDER BY seq
+        WHERE case_ref = '{ref}' ORDER BY link_no
     """)[0]
     if history is not None and len(history):
         st.dataframe(history, use_container_width=True, hide_index=True)
@@ -447,22 +447,34 @@ elif page.startswith("6"):
     st.subheader("Case action log")
     al, al_err = try_q("""
         SELECT COUNT(*) AS actions,
-               COALESCE(SUM(CASE WHEN link_intact THEN 0 ELSE 1 END), 0) AS broken
+               COALESCE(SUM(CASE WHEN link_intact     THEN 0 ELSE 1 END), 0) AS broken,
+               COALESCE(SUM(CASE WHEN hash_recomputes THEN 0 ELSE 1 END), 0) AS mismatched,
+               COALESCE(SUM(CASE WHEN no_fork         THEN 0 ELSE 1 END), 0) AS forked
         FROM TRACE_DB.AUDIT.V_ACTION_LOG_VERIFICATION
     """)
     if al_err:
-        st.caption("_Action log views not yet created — run sql/24 in Snowsight._")
+        st.caption("_Action log views not yet created — run sql/26 in Snowsight._")
     else:
-        n, broken = int(al.iloc[0]["ACTIONS"]), int(al.iloc[0]["BROKEN"])
-        if n and not broken:
+        r = al.iloc[0]
+        n = int(r["ACTIONS"])
+        faults = {"broken links": int(r["BROKEN"]),
+                  "hashes that do not recompute": int(r["MISMATCHED"]),
+                  "rows sharing a predecessor": int(r["FORKED"])}
+        bad = {k: v for k, v in faults.items() if v}
+        if n and not bad:
             st.success(f"INTACT — {n} recorded actions, chain unbroken", icon="✅")
         elif not n:
             st.info("No actions recorded yet", icon="ℹ️")
         else:
-            st.error(f"TAMPERED — {broken} broken links", icon="🚨")
+            st.error("TAMPERED — " + ", ".join(f"{v} {k}" for k, v in bad.items()),
+                     icon="🚨")
         st.caption(
-            "Investigator decisions are chained the same way the evidence is. "
-            "What was found and what was done about it are both verifiable."
+            "Three checks, not one: each row links to its predecessor, each "
+            "row's hash recomputes from what is stored, and no two rows claim "
+            "the same predecessor. The second is what makes this verifiable "
+            "by someone other than the code that wrote it; the third holds "
+            "even if the ordering key is wrong, which is how the fork fixed "
+            "in sql/26 was found."
         )
 
     st.divider()

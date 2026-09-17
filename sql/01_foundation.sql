@@ -164,14 +164,23 @@ CREATE OR REPLACE TABLE POLICY.RULE_PREDICATES (
 -- AUDIT — append-only, hash-chained
 -- ============================================================================
 
+-- link_no is assigned by AUDIT.RECORD_CASE_ACTION, deliberately NOT by
+-- AUTOINCREMENT. Snowflake allocates autoincrement values in per-session
+-- ranges and does not guarantee they follow insertion order; an earlier
+-- version of this table used one as the chain's ordering key and forked the
+-- chain the first time two sessions appended to it. See sql/26.
+--
+-- event_ts has no DEFAULT for the same class of reason: the procedure reads
+-- the clock once and writes that same value into both the hash and this
+-- column, so the hash can be recomputed from the stored row by anyone.
 CREATE OR REPLACE TABLE AUDIT.AUDIT_LOG (
-    seq         NUMBER          AUTOINCREMENT START 1 INCREMENT 1,
-    event_ts    TIMESTAMP_NTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+    link_no     NUMBER          NOT NULL,
+    event_ts    TIMESTAMP_NTZ   NOT NULL,
     actor       STRING          NOT NULL,
     action      STRING          NOT NULL,
     object_ref  STRING,
     payload     VARIANT,
-    prev_hash   STRING,
+    prev_hash   STRING          NOT NULL,
     row_hash    STRING          NOT NULL
 );
 
