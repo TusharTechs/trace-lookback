@@ -9,8 +9,15 @@ wrong table behind the wrong page.
 
 This identifies each file by its column signature instead.
 
-    python3 place_downloads.py              # look in ~/Downloads
+    python3 place_downloads.py              # ~/Downloads, last 24 hours
+    python3 place_downloads.py --hours 72   # widen the window
+    python3 place_downloads.py --all        # every CSV, however old
     python3 place_downloads.py ~/some/dir
+
+Only files modified inside the window are considered, because a Downloads
+folder accumulates: the first version of this scanned 748 unrelated CSVs and
+printed a rejection line for every one, which buried the only message that
+mattered. Unrelated files are now counted, not listed.
 
 Nothing is overwritten without --force, and nothing is deleted: files are
 copied, not moved, so a mistake here costs nothing.
@@ -20,6 +27,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -82,23 +90,38 @@ def looks_masked(df: pd.DataFrame) -> bool:
 
 
 def main() -> int:
-    src = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 \
-        else Path.home() / "Downloads"
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    src = Path(args[0]).expanduser() if args else Path.home() / "Downloads"
     force = "--force" in sys.argv
+
+    hours = 24.0
+    if "--all" in sys.argv:
+        hours = float("inf")
+    elif "--hours" in sys.argv:
+        hours = float(sys.argv[sys.argv.index("--hours") + 1])
+
     if not src.is_dir():
         print(f"no such directory: {src}")
         return 1
 
     DATA.mkdir(exist_ok=True)
-    candidates = sorted(src.glob("*.csv"), key=lambda p: p.stat().st_mtime,
-                        reverse=True)
+    every = sorted(src.glob("*.csv"), key=lambda p: p.stat().st_mtime,
+                   reverse=True)
+    cutoff = time.time() - hours * 3600
+    candidates = [f for f in every if f.stat().st_mtime >= cutoff]
+    older = len(every) - len(candidates)
+
+    window = "any age" if hours == float("inf") else f"last {hours:g}h"
+    print(f"{src}: {len(candidates)} CSV(s) in the {window}"
+          + (f", {older} older ignored" if older else "") + "\n")
     if not candidates:
-        print(f"no CSV files in {src}")
+        print("Nothing recent to place. Download the exports first, or widen")
+        print("the window with --hours N / --all.")
         return 1
 
-    print(f"scanning {len(candidates)} CSV file(s) in {src}\n")
     placed: dict[str, Path] = {}
     skipped: list[tuple[Path, str]] = []
+    unrelated = 0
 
     for f in candidates:
         try:
@@ -112,8 +135,13 @@ def main() -> int:
             ((n, jaccard(cols, sig)) for n, sig in SIGNATURES.items()),
             key=lambda t: t[1],
         )
+        if score < 0.45:
+            unrelated += 1            # counted, not listed
+            continue
         if score < 0.75:
-            skipped.append((f, "no match — not one of ours"))
+            # Close enough to be worth naming: probably one of ours, exported
+            # with the wrong query or truncated.
+            skipped.append((f, f"looks like {best} but only {score:.0%} match"))
             continue
 
         name = best
@@ -140,9 +168,11 @@ def main() -> int:
     missing = sorted(expected - set(placed))
 
     if skipped:
-        print("\nskipped")
+        print("\nneeds a look")
         for f, why in skipped:
             print(f"  {f.name}  —  {why}")
+    if unrelated:
+        print(f"\n{unrelated} unrelated CSV(s) ignored")
 
     print(f"\nplaced {len(placed)} file(s) in data/")
     if missing:
