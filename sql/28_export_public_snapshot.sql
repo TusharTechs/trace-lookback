@@ -27,6 +27,39 @@ USE WAREHOUSE COMPUTE_WH;
 USE DATABASE TRACE_DB;
 
 -- ---------------------------------------------------------------------------
+-- 0. PREFLIGHT — run this first. Nothing to download.
+--
+--    Every row must say TABLE or VIEW. This exists because the first version
+--    of this script tried to SELECT * FROM POLICY.REPLAY_SUMMARY, which is a
+--    table function, not a view -- the script was written from a list of
+--    object names without checking what kind of object each one was. Sixteen
+--    queries in, that is an expensive way to find out.
+-- ---------------------------------------------------------------------------
+WITH wanted AS (
+    SELECT * FROM VALUES
+        ('AUDIT',  'EVIDENCE_PACK'),
+        ('AUDIT',  'EVIDENCE_CHAIN'),
+        ('AUDIT',  'V_EVIDENCE_PACK_RENDER'),
+        ('AUDIT',  'TAMPER_DRILL_LOG'),
+        ('AUDIT',  'V_CASE_HISTORY'),
+        ('AUDIT',  'V_CHAIN_VERIFICATION'),
+        ('EVAL',   'ADJUDICATION'),
+        ('EVAL',   'INVISIBLE_POPULATION'),
+        ('POLICY', 'V_THRESHOLD_SENSITIVITY'),
+        ('POLICY', 'POLICY_VERSIONS'),
+        ('POLICY', 'RULE_PREDICATES'),
+        ('POLICY', 'CANDIDATE_PREDICATES'),
+        ('POLICY', 'V_CERTIFICATION_QUEUE'),
+        ('POLICY', 'V_ENFORCEABLE_PREDICATES')
+    AS t(sch, obj)
+)
+SELECT w.sch, w.obj, COALESCE(t.table_type, '>>> MISSING <<<') AS kind
+FROM wanted w
+LEFT JOIN TRACE_DB.INFORMATION_SCHEMA.TABLES t
+       ON t.table_schema = w.sch AND t.table_name = w.obj
+ORDER BY CASE WHEN t.table_type IS NULL THEN 0 ELSE 1 END, w.sch, w.obj;
+
+-- ---------------------------------------------------------------------------
 -- 1 → evidence_pack.csv
 --     TO_JSON is exported verbatim. Do not reformat this column by hand; a
 --     single changed byte is supposed to break verification, and will.
@@ -61,53 +94,54 @@ SELECT * FROM EVAL.INVISIBLE_POPULATION ORDER BY customer_id, week_start;
 
 -- ---------------------------------------------------------------------------
 -- 6 → threshold_sensitivity.csv
+--
+--     POLICY.REPLAY_SUMMARY is deliberately NOT exported: it is a table
+--     function, and a snapshot cannot call one. This view already evaluates
+--     the same replay across the full ₹5L–₹12L grid in ₹50,000 steps -- the
+--     exact range of the slider -- so the public demo reads precomputed rows
+--     rather than pretending to invoke a UDTF it cannot reach.
 -- ---------------------------------------------------------------------------
 SELECT * FROM POLICY.V_THRESHOLD_SENSITIVITY ORDER BY 1;
 
 -- ---------------------------------------------------------------------------
--- 7 → replay_summary.csv
--- ---------------------------------------------------------------------------
-SELECT * FROM POLICY.REPLAY_SUMMARY ORDER BY 1;
-
--- ---------------------------------------------------------------------------
--- 8 → policy_versions.csv
+-- 7 → policy_versions.csv
 -- ---------------------------------------------------------------------------
 SELECT * FROM POLICY.POLICY_VERSIONS ORDER BY 1;
 
 -- ---------------------------------------------------------------------------
--- 9 → rule_predicates.csv
+-- 8 → rule_predicates.csv
 -- ---------------------------------------------------------------------------
 SELECT * FROM POLICY.RULE_PREDICATES ORDER BY 1;
 
 -- ---------------------------------------------------------------------------
--- 10 → candidate_predicates.csv
+-- 9 → candidate_predicates.csv
 -- ---------------------------------------------------------------------------
 SELECT * FROM POLICY.CANDIDATE_PREDICATES ORDER BY 1;
 
 -- ---------------------------------------------------------------------------
--- 11 → certification_queue.csv
+-- 10 → certification_queue.csv
 -- ---------------------------------------------------------------------------
 SELECT * FROM POLICY.V_CERTIFICATION_QUEUE ORDER BY 1;
 
 -- ---------------------------------------------------------------------------
--- 12 → enforceable_predicates.csv
+-- 11 → enforceable_predicates.csv
 -- ---------------------------------------------------------------------------
 SELECT * FROM POLICY.V_ENFORCEABLE_PREDICATES ORDER BY 1;
 
 -- ---------------------------------------------------------------------------
--- 13 → tamper_drill_log.csv
+-- 12 → tamper_drill_log.csv
 -- ---------------------------------------------------------------------------
 SELECT ord, drill, attack, actions, broken_links, hash_mismatches,
        forked_rows, verdict, caught_by
 FROM AUDIT.TAMPER_DRILL_LOG ORDER BY ord;
 
 -- ---------------------------------------------------------------------------
--- 14 → case_history.csv
+-- 13 → case_history.csv
 -- ---------------------------------------------------------------------------
 SELECT * FROM AUDIT.V_CASE_HISTORY ORDER BY link_no;
 
 -- ---------------------------------------------------------------------------
--- 15 → chain_verification.csv
+-- 14 → chain_verification.csv
 --      The database's own verdict, exported so the public app can show that
 --      its independent Python recomputation agrees with it.
 -- ---------------------------------------------------------------------------
@@ -117,7 +151,7 @@ FROM AUDIT.V_CHAIN_VERIFICATION
 ORDER BY link_no;
 
 -- ===========================================================================
--- 16 → pack_render_masked.csv   (RUN THESE THREE STATEMENTS TOGETHER)
+-- 15 → pack_render_masked.csv   (RUN THESE THREE STATEMENTS TOGETHER)
 --
 -- The same view read as the investigator role. Exporting both gives the
 -- public demo two real database outputs to put side by side, rather than a
