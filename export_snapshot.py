@@ -29,6 +29,7 @@ restored in a finally block.
 from __future__ import annotations
 
 import hashlib
+import os
 import sys
 from pathlib import Path
 
@@ -78,11 +79,38 @@ def sha256(s: str) -> str:
 
 
 def main() -> int:
+    # This endpoint runs Netskope, whose roots are installed in the macOS
+    # System keychain. Chrome and CoCo CLI therefore connect fine. The
+    # Snowflake connector does not: it routes TLS through
+    # vendored/urllib3/contrib/pyopenssl, and pyOpenSSL reads a CA bundle file
+    # rather than the OS trust store -- which is also why `truststore` never
+    # helped here, since that patches Python's ssl module and this path
+    # bypasses it. The failure is `certificate verify failed` at
+    # /oauth/token-request.
+    #
+    # Fix: hand it a bundle that contains both certifi's roots and the
+    # keychain's. Build it with:
+    #
+    #   security find-certificate -a -p \
+    #     /System/Library/Keychains/SystemRootCertificates.keychain  > /tmp/r.pem
+    #   security find-certificate -a -p /Library/Keychains/System.keychain \
+    #     >> /tmp/r.pem
+    #   cat "$(python3 -c 'import certifi;print(certifi.where())')" /tmp/r.pem \
+    #     > ~/.snowflake/ca-bundle.pem
+    #
+    # Must be set before snowflake.connector is imported.
+    bundle = Path.home() / ".snowflake" / "ca-bundle.pem"
+    if bundle.exists():
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", str(bundle))
+        os.environ.setdefault("SSL_CERT_FILE", str(bundle))
+        os.environ.setdefault("CURL_CA_BUNDLE", str(bundle))
+        print(f"using CA bundle {bundle}")
+
     try:
         import truststore
         truststore.inject_into_ssl()
     except Exception:
-        pass  # only needed behind a TLS-inspecting proxy
+        pass
 
     import pandas as pd
     import snowflake.connector as sc
