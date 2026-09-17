@@ -21,7 +21,7 @@ TRACE replays every transaction against the corrected rule and adjudicates what 
 | 🎯 **The problem, in 90 seconds** | [The gap](#the-gap) |
 | 📊 **Results and honest limits** | [`EVALUATION.md`](EVALUATION.md) — what was measured, and what it does not show |
 | 🏗 **Architecture diagrams** | [`docs/architecture.md`](docs/architecture.md) |
-| 🧪 **Raw output of every run** | [`eval/`](eval/) — nothing in this repo is quoted from memory |
+| 🧪 **Raw output of every run** | [`eval/`](eval/README.md) — indexed; nothing in this repo is quoted from memory |
 | 🤖 **CoCo skills, subagents, hook** | [`.cortex/`](.cortex/) |
 | ▶️ **Run it yourself** | [Reproduce](#reproduce) — Windows, macOS, Linux |
 | 🔍 **The single best artifact** | [One case, end to end](#one-case-end-to-end) |
@@ -278,7 +278,7 @@ time, and no ground truth leaking into features.
 ```
 app/trace_app.py                Streamlit in Snowflake — the investigator surface
 generator/generate.py           synthetic corpus (seeded, deterministic)
-generator/load.py               optional Python loader
+generator/load.py               optional Python loader (untested here; see its docstring)
 sql/01-02                       bitemporal schema, ground-truth tables
 sql/11-16                       load, replay engine, adjudication, packs, chain, metrics
 sql/17                          roles, masking, isolation tests (Snowsight, by a human)
@@ -291,7 +291,7 @@ sql/03-10, 21, 24-25            superseded; retained as history
 .cortex/agents/                 two read-only subagents
 .cortex/hooks/                  PreToolUse guard on the AUDIT schema
 tests/                          guard behaviour and corpus invariants
-eval/                           raw output of every run
+eval/                           raw output of every run, indexed in eval/README.md
 docs/architecture.md            data model, model boundary, control layers
 EVALUATION.md                   what was measured, and what it does not show
 ```

@@ -9,6 +9,16 @@ the agent Restricted Session Scope -- CoCo's own guardrails banner says as
 much. That is deliberate here (loading is an ACCOUNTADMIN build step), but it
 is exactly the gap the PreToolUse hook exists to close for the audit log.
 
+NOT the path used to build this project. On the network TRACE was developed
+on, TLS is terminated by an inspecting proxy and this connector never
+completed a handshake -- truststore and REQUESTS_CA_BUNDLE were both tried.
+The corpus was loaded through CoCo CLI's own `sql_execute` instead, which is
+what `sql/11_reload_and_score_v5.sql` documents.
+
+It is kept because it is the right tool on a normal network and because the
+governance note above is worth stating. It is, however, the less-tested of
+the two paths: if it fails for you, use the CoCo route in the README.
+
 Usage:
     uv run --with 'snowflake-connector-python[pandas]' --with truststore generator/load.py
 """
