@@ -23,6 +23,7 @@ TRACE replays every transaction against the corrected rule and adjudicates what 
 | 🏗 **Architecture diagrams** | [`docs/architecture.md`](docs/architecture.md) |
 | 🧪 **Raw output of every run** | [`eval/`](eval/README.md) — indexed; nothing in this repo is quoted from memory |
 | 🤖 **CoCo skills, subagents, hook** | [`.cortex/`](.cortex/) |
+| 🌐 **Open the live demo** | *(link added at submission)* — public snapshot; verify the hash chain in your own browser |
 | ▶️ **Run it yourself** | [Reproduce](#reproduce) — Windows, macOS, Linux |
 | 🔍 **The single best artifact** | [One case, end to end](#one-case-end-to-end) |
 | 🛡 **Proof the controls work** | [Three tamper drills](EVALUATION.md#the-detector-was-tested-as-an-adversary-and-it-fires) — we attacked our own audit trail as `ACCOUNTADMIN` |
@@ -243,6 +244,7 @@ so they work unchanged on every platform.
 | `sql/23_certification_gate.sql` | certification, and lapse on amendment | — |
 | `sql/26_action_log_rebuild.sql` | append-only case actions, chained | — |
 | `sql/27_tamper_drill.sql` | three tamper drills — proves the detector fires | — |
+| `sql/28_export_public_snapshot.sql` | export the public demo snapshot | — |
 | `sql/15_final_metrics.sql` | AUC, lift curve, branch concentration | — |
 
 `sql/17_roles_and_masking.sql`, `sql/26_action_log_rebuild.sql` and `sql/27_tamper_drill.sql` are
