@@ -69,6 +69,17 @@ the repo root. Do not reach for `snow` or SnowSQL — neither is installed, and
 the Python connector cannot complete a TLS handshake on networks that inspect
 traffic.
 
+**`AI_COMPLETE` with `response_format` returns an OBJECT, not a string.**
+Wrapping it in `TRY_PARSE_JSON` yields NULL, and `FLATTEN` over NULL produces
+zero rows with no error at all. Read fields off the result directly
+(`resp:field`) and `FLATTEN(input => resp:array)` without a parse step.
+
+**Model-returned dates are not reliably ISO.** The same schema produced
+`"2023-01-01"` in one call and `"1 January 2023"` in another. `TRY_TO_DATE` on
+the prose form returns NULL and the row disappears. Demand ISO in the prompt,
+parse with fallbacks, and surface unparsed dates as a warning column rather
+than letting the row vanish.
+
 **`AI_COMPLETE` with a JSON-schema `response_format` does not work on
 `llama3.1-8b`** — it returns NULL. Only `claude-sonnet-4-5` is used for
 adjudication. `AI_CLASSIFY` works on small models but returns a shape that must
