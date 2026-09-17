@@ -1,8 +1,16 @@
 -- ============================================================================
 -- 28_export_public_snapshot.sql — data for the public demo.
 --
--- RUN IN SNOWSIGHT. Run each numbered query, then use the download icon above
--- the results pane and save it under the exact filename in the heading.
+-- RUN IN SNOWSIGHT — ONE STATEMENT AT A TIME. DO NOT USE "RUN ALL".
+--
+-- Snowsight keeps only the last statement's result pane, so running the whole
+-- worksheet overwrites all fifteen result sets and leaves nothing to download.
+-- Put the cursor inside a statement, press Cmd/Ctrl+Enter, then use the
+-- download icon above the results pane and save it under the exact filename
+-- in that query's heading.
+--
+-- Run 0 and 0b first; they are checks, with nothing to download.
+-- Query 15 is the exception to one-at-a-time: its statements run together.
 -- Put every file in  data/  on the `demo` branch of this repository
 --   git checkout demo   →   data/<name>.csv   →   commit and push
 --
