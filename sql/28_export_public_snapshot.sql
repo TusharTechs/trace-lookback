@@ -61,6 +61,34 @@ LEFT JOIN TRACE_DB.INFORMATION_SCHEMA.TABLES t
 ORDER BY CASE WHEN t.table_type IS NULL THEN 0 ELSE 1 END, w.sch, w.obj;
 
 -- ---------------------------------------------------------------------------
+-- 0b. PREFLIGHT, columns. Also nothing to download.
+--
+--     Knowing an object exists is not enough. Three queries in this script
+--     were written by naming columns that seemed obvious and turned out not
+--     to exist -- V_ACTION_LOG_VERIFICATION has no `actor`,
+--     V_CHAIN_VERIFICATION has no `pack_seq`, and POLICY.REPLAY_SUMMARY is
+--     not a view at all. Each cost a failed run.
+--
+--     Only four queries below name columns explicitly (1, 2, 12, and this
+--     check itself); the rest are SELECT *, which is the right default when
+--     exporting whole objects. Read this output before running them.
+-- ---------------------------------------------------------------------------
+SELECT table_schema AS sch, table_name AS obj,
+       LISTAGG(column_name, ', ')
+         WITHIN GROUP (ORDER BY ordinal_position) AS columns
+FROM TRACE_DB.INFORMATION_SCHEMA.COLUMNS
+WHERE (table_schema, table_name) IN (
+        ('AUDIT','EVIDENCE_PACK'), ('AUDIT','EVIDENCE_CHAIN'),
+        ('AUDIT','V_EVIDENCE_PACK_RENDER'), ('AUDIT','TAMPER_DRILL_LOG'),
+        ('AUDIT','V_CASE_HISTORY'), ('AUDIT','V_CHAIN_VERIFICATION'),
+        ('EVAL','ADJUDICATION'), ('EVAL','INVISIBLE_POPULATION'),
+        ('POLICY','V_THRESHOLD_SENSITIVITY'), ('POLICY','POLICY_VERSIONS'),
+        ('POLICY','RULE_PREDICATES'), ('POLICY','CANDIDATE_PREDICATES'),
+        ('POLICY','V_CERTIFICATION_QUEUE'), ('POLICY','V_ENFORCEABLE_PREDICATES'))
+GROUP BY table_schema, table_name
+ORDER BY table_schema, table_name;
+
+-- ---------------------------------------------------------------------------
 -- 1 → evidence_pack.csv
 --     TO_JSON is exported verbatim. Do not reformat this column by hand; a
 --     single changed byte is supposed to break verification, and will.
@@ -146,10 +174,7 @@ SELECT * FROM AUDIT.V_CASE_HISTORY ORDER BY link_no;
 --      The database's own verdict, exported so the public app can show that
 --      its independent Python recomputation agrees with it.
 -- ---------------------------------------------------------------------------
-SELECT link_no, pack_seq, case_ref,
-       content_intact, link_intact, hash_intact, pack_present
-FROM AUDIT.V_CHAIN_VERIFICATION
-ORDER BY link_no;
+SELECT * FROM AUDIT.V_CHAIN_VERIFICATION ORDER BY link_no;
 
 -- ===========================================================================
 -- 15 → pack_render_masked.csv   (RUN THESE THREE STATEMENTS TOGETHER)
