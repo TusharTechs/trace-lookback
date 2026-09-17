@@ -25,10 +25,16 @@ TRACE replays every transaction against the corrected rule and adjudicates what 
 | 🤖 **CoCo skills, subagents, hook** | [`.cortex/`](.cortex/) |
 | ▶️ **Run it yourself** | [Reproduce](#reproduce) — Windows, macOS, Linux |
 | 🔍 **The single best artifact** | [One case, end to end](#one-case-end-to-end) |
+| 🛡 **Proof the controls work** | [Three tamper drills](EVALUATION.md#the-detector-was-tested-as-an-adversary-and-it-fires) — we attacked our own audit trail as `ACCOUNTADMIN` |
 
 **Headline:** 2,759 customer-weeks and ₹247 crore raised no alert for thirteen months.
 TRACE recovered **1,131 of the 1,331 genuinely suspicious weeks** (recall 0.850) for about **$15**,
 and issued **687 hash-chained evidence packs** an examiner can verify rather than trust.
+
+A chain that has only ever reported `INTACT` proves nothing, so we attacked our own audit trail as
+`ACCOUNTADMIN` — forging an append, rewording a decision, deleting a record. All three were caught,
+**each by a different check**, and [`EVALUATION.md`](EVALUATION.md#what-the-drills-do-not-prove)
+states plainly what the chain still cannot prevent.
 
 ---
 

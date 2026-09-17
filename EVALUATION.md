@@ -610,6 +610,87 @@ This is recorded in full because a chain that has only ever reported `INTACT`
 is not evidence that it works. This one reported a fault, on our own data,
 before anyone else saw it — and the fault was real.
 
+### The detector was tested, as an adversary, and it fires
+
+Everything above establishes that the chain reports `INTACT`. That is not
+evidence that it works. A verification view which has never returned
+`TAMPERED` is indistinguishable from `SELECT 'INTACT'`, and the fork in the
+previous section is the only failure the system had ever produced — which
+sql/26 then fixed away.
+
+`sql/27_tamper_drill.sql` attacks the action log three times, as
+`ACCOUNTADMIN`: the strongest adversary the account has. The claim under test
+is deliberately not "nobody can write to `AUDIT`" — an account administrator
+plainly can — but **"nobody can write to `AUDIT` without the record showing
+it."**
+
+| drill | attack | rows | broken links | hashes not recomputing | verdict | caught by |
+|---|---|---|---|---|---|---|
+| baseline | nothing altered | 4 | 0 | 0 | `INTACT` | — |
+| 1 | forged append, linked correctly to the head | 5 | 0 | **1** | `TAMPERED` | hash recomputation |
+| 2 | FIU escalation reworded as a routine clearance | 4 | 0 | **1** | `TAMPERED` | hash recomputation |
+| 3 | FIU escalation deleted outright | 3 | **1** | 0 | `TAMPERED` | link walk |
+| restored | reseeded | 4 | 0 | 0 | `INTACT` | — |
+| — | evidence chain, never written to by the drill | 687 | 0 | 0 | `INTACT` | — |
+
+**Drills 2 and 3 are the result worth reading.** They are caught by different
+checks, and each is *invisible* to the check that catches the other.
+
+- Rewording a decision changes nothing structural. `link_no`, `prev_hash` and
+  `row_hash` are untouched, so the chain walks perfectly: `broken_links 0`.
+  Only recomputing the hash from the stored content exposes it.
+- Deleting a record leaves every surviving row hashing correctly:
+  `hash_mismatches 0`. Only the walk shows the gap.
+
+A verification built on either check alone would have passed one of these two
+attacks and reported `INTACT`. That is the measured justification for three
+columns instead of one, and it is why the drill exists rather than a sentence
+claiming the chain is sound.
+
+Drill 2 is also precisely the attack the **original** design could not have
+caught under any circumstances, because its hashes were never reproducible
+(previous section). The fork forced us to look; the reason the looking
+mattered was this.
+
+#### Building the drill produced a bypass, and closed it
+
+The drill needs a procedure in `AUDIT` that deletes rows, to reseed between
+attacks. Creating it is a human operation in Snowsight — the hook refuses
+`CREATE PROCEDURE` in `AUDIT` exactly because an agent that can mint one can
+put an `UPDATE` inside it and call it.
+
+That only closed half the hole. The hook's own docstring read *"Existing
+procedures may be called"*, so once a human created the reseed procedure, the
+agent could simply `CALL` it. Writing the drill produced, as a by-product, the
+bypass the drill would have used.
+
+Calls into `AUDIT` are now allowlisted by procedure name —
+`BUILD_EVIDENCE_CHAIN` and `RECORD_CASE_ACTION`, both `INSERT`-only. A human
+adding a procedure to `AUDIT` no longer thereby grants the agent a capability;
+that takes a second, deliberate edit. Seven tests cover it, including the
+quoted-identifier form `CALL "AUDIT"."RESET_ACTION_LOG_DEMO"()`.
+
+The reseed procedure is dropped at the end of `sql/27`. A procedure that
+deletes from an append-only evidence schema, left sitting inside that schema,
+is the first thing an examiner would object to.
+
+#### What the drills do not prove
+
+An adversary holding `ACCOUNTADMIN` who also reads this repository can append
+a **well-formed** forged action. The canonical string is public, so they can
+compute a `row_hash` that recomputes correctly and links to the current head.
+It will verify, because it is indistinguishable from a real append.
+
+This is the true property of a hash chain and is worth stating exactly rather
+than letting the `INTACT` badge imply more. **The chain makes the past
+tamper-evident — nothing already recorded can be altered or removed without
+the record showing it, which is what drills 2 and 3 demonstrate. It does not
+make the present unforgeable.**
+
+Closing that gap requires something the database does not hold: periodically
+publishing the head hash outside the account, or signing each append with a
+key Snowflake never sees. Neither is built here.
+
 ---
 
 ## 11. Reproducing
@@ -635,9 +716,11 @@ Then, in order, against Snowflake:
 | `sql/22_extraction_staged.sql` | predicate extraction from policy prose |
 | `sql/23_certification_gate.sql` | human certification before enforcement |
 | `sql/26_action_log_rebuild.sql` | **Snowsight** — case action log, chained |
+| `sql/27_tamper_drill.sql` | **Snowsight** — three tamper drills against the chain |
 
-`sql/17` and `sql/26` create objects in `AUDIT` and must be run by a human in
-Snowsight: the hook refuses them from the agent, which is the control working.
+`sql/17`, `sql/26` and `sql/27` create objects in `AUDIT` and must be run by a
+human in Snowsight: the hook refuses them from the agent, which is the control
+working.
 
 Scripts `03`–`10` are superseded and retained as history: they record the two
 corpus failures and the measurement error described above. `sql/24` and
