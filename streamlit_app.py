@@ -126,7 +126,7 @@ if page.startswith("1"):
     if d:
         pop = d[0]
         notional = next(
-            (c for c in ("notional", "total_notional", "amount_inr", "aggregate_cash")
+            (c for c in ("aggregate_amount", "notional", "aggregate_cash")
              if c in pop.columns), None
         )
         c = st.columns(3)
@@ -226,8 +226,18 @@ elif page.startswith("3"):
                 "contains genuinely suspicious weeks — 199 of them. Auto-closing "
                 "it would miss every one, so the system does not offer that."
             )
-        st.dataframe(adj.head(200), use_container_width=True, hide_index=True)
-        st.caption(f"First 200 of {len(adj):,} adjudicated weeks.")
+        show = [c for c in ("customer_id", "week_start", "aggregate_amount",
+                            "p_suspicious", "aggravating", "mitigating")
+                if c in adj.columns]
+        st.dataframe(
+            adj.sort_values(p, ascending=False)[show].head(200),
+            use_container_width=True, hide_index=True,
+        )
+        st.caption(
+            f"Highest-scoring 200 of {len(adj):,} adjudicated weeks. The model's "
+            "full response is kept in the `raw` column in Snowflake and omitted "
+            "here for legibility."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -479,7 +489,7 @@ elif page.startswith("8"):
         adj, pop = d
         keys = [k for k in ("customer_id", "week_start") if k in adj.columns and k in pop.columns]
         if keys and "is_truly_suspicious" in pop.columns and "p_suspicious" in adj.columns:
-            j = adj.merge(pop, on=keys, how="inner")
+            j = adj.merge(pop, on=keys, how="inner", suffixes=("_adj", "_pop"))
             y = j["is_truly_suspicious"].astype(str).str.lower().isin(["true", "1", "t", "yes"])
             yhat = j["p_suspicious"] >= 0.45
             tp = int((y & yhat).sum())
