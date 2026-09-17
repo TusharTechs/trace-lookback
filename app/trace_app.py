@@ -266,6 +266,46 @@ elif page.startswith("4"):
 
     st.code(f"content_hash  {pack['CONTENT_HASH']}\nchain_hash    {pack['CHAIN_HASH']}")
 
+    # ---- Record a decision -------------------------------------------------
+    st.divider()
+    st.subheader("Record a decision")
+    st.caption(
+        "Appended to an immutable log and hash-chained. Nothing here can be "
+        "edited afterwards — a decision made in error is corrected by "
+        "recording a superseding one, the way a paper case file works."
+    )
+
+    history = try_q(f"""
+        SELECT event_ts, actor, action, note
+        FROM TRACE_DB.AUDIT.V_CASE_HISTORY
+        WHERE case_ref = '{ref}' ORDER BY seq
+    """)[0]
+    if history is not None and len(history):
+        st.dataframe(history, use_container_width=True, hide_index=True)
+    else:
+        st.caption("_No actions recorded on this case yet._")
+
+    c1, c2 = st.columns([1, 2])
+    act = c1.selectbox("Action", ["ASSIGNED", "ESCALATED_TO_FIU",
+                                  "REQUESTED_INFORMATION", "CLOSED_NO_ACTION",
+                                  "SUPERSEDED"])
+    note = c2.text_input("Note", placeholder="Reason for this decision")
+
+    if st.button("Record", type="primary", disabled=not note.strip()):
+        safe_note = note.replace("'", "''")
+        who = q("SELECT CURRENT_USER() AS u").iloc[0]["U"]
+        res, err = try_q(
+            f"CALL TRACE_DB.AUDIT.RECORD_CASE_ACTION("
+            f"'{ref}', '{who}', '{act}', '{safe_note}')")
+        if err:
+            st.error(err, icon="🚫")
+        else:
+            outcome = res.iloc[0, 0]
+            (st.success if outcome.startswith("RECORDED") else st.warning)(
+                outcome, icon="✅" if outcome.startswith("RECORDED") else "⚠️")
+            st.cache_data.clear()
+            st.rerun()
+
 # ---------------------------------------------------------------------------
 # 5. Where the rule comes from
 # ---------------------------------------------------------------------------
@@ -402,6 +442,28 @@ elif page.startswith("6"):
     """)
     if len(head):
         st.code(f"head of chain\n{head.iloc[0]['CHAIN_HASH']}")
+
+    st.divider()
+    st.subheader("Case action log")
+    al, al_err = try_q("""
+        SELECT COUNT(*) AS actions,
+               COALESCE(SUM(CASE WHEN link_intact THEN 0 ELSE 1 END), 0) AS broken
+        FROM TRACE_DB.AUDIT.V_ACTION_LOG_VERIFICATION
+    """)
+    if al_err:
+        st.caption("_Action log views not yet created — run sql/24 in Snowsight._")
+    else:
+        n, broken = int(al.iloc[0]["ACTIONS"]), int(al.iloc[0]["BROKEN"])
+        if n and not broken:
+            st.success(f"INTACT — {n} recorded actions, chain unbroken", icon="✅")
+        elif not n:
+            st.info("No actions recorded yet", icon="ℹ️")
+        else:
+            st.error(f"TAMPERED — {broken} broken links", icon="🚨")
+        st.caption(
+            "Investigator decisions are chained the same way the evidence is. "
+            "What was found and what was done about it are both verifiable."
+        )
 
     st.divider()
     st.markdown(
