@@ -9,7 +9,7 @@
 ## CALL CHAIN_EVIDENCE_PACKS
 
 ```
-chained 687 packs, head=a0d16fadeae3ba73350d22606eacf3b7b8efdf3b01a4fbf1b2e401496a916e3e
+chained 687 packs, head=b607da8df540cb238d9212b40f2eb90b2a320b9962aa43de941b957954954c42
 ```
 
 ## Chain Verification

@@ -379,7 +379,7 @@ Editing, removing or reordering any pack breaks every hash after it.
 a verdict rather than an assertion.
 
 ```
-chained 687 packs, head=a0d16fadeae3ba73350d22606eacf3b7b8efdf3b01a4fbf1b2e401496a916e3e
+chained 687 packs, head=b607da8df540cb238d9212b40f2eb90b2a320b9962aa43de941b957954954c42
 verdict: INTACT   (0 payloads tampered, 0 links broken, 0 hashes mismatched)
 ```
 
@@ -488,6 +488,32 @@ cannot reach inside a materialised VARIANT. Attaching the policy would have
 produced a demonstration that looked governed while every pack still carried
 PANs in clear. Identity is now resolved at query time through
 `AUDIT.V_EVIDENCE_PACK_RENDER`.
+
+#### The claim was true of the code and false of the data
+
+That paragraph was written when the fix landed in `sql/14`, and it described
+the source accurately. It did not describe what was in the account. The
+`AUDIT.EVIDENCE_PACK` table had been built by the *earlier* version and was
+never rebuilt, so all 687 live payloads still carried `customer_name` and
+`pan` while the evaluation said they did not.
+
+It surfaced on 18 September, when the public demo began rendering raw payloads
+on its tamper page and a PAN was visible inside a pack the repository says
+contains none. Publishing the artifact is what exposed the gap between the
+artifact and the write-up — the check the documentation could not perform on
+itself.
+
+`sql/14` and `sql/16` were re-run. The payloads no longer carry identity, and
+the chain head moved from `a0d16fad…` to `b607da8d…`, which is the evidence
+that the content genuinely changed rather than the claim being softened. Every
+figure quoting the old head was updated.
+
+Two things are worth keeping from this rather than tidying away. **A fix in
+source is not a fix in a stateful system** — the correction and the rebuild
+are separate acts, and only one of them had happened. And this is the sixth
+instance in this project of a result that passed for the wrong reason: the
+code was right, the sentence was right about the code, and nobody checked the
+sentence against the table.
 
 ### `USE ROLE` does not test isolation — and nearly fooled us
 
@@ -604,7 +630,7 @@ what an unstated concurrency assumption looks like when it breaks.
 The evidence chain (`AUDIT.EVIDENCE_CHAIN`) does not share either defect: it is
 built in one pass by `BUILD_EVIDENCE_CHAIN()` over an ordered scan, and hashes
 the pack payload rather than a clock read. It was re-verified after this fix
-and remains `INTACT` at head `a0d16fadeae3ba73350d22606eacf3b7b8efdf3b01a4fbf1b2e401496a916e3e`.
+and remains `INTACT` at head `b607da8df540cb238d9212b40f2eb90b2a320b9962aa43de941b957954954c42`.
 
 This is recorded in full because a chain that has only ever reported `INTACT`
 is not evidence that it works. This one reported a fault, on our own data,
