@@ -15,10 +15,22 @@ external service and no API key.
 """
 
 import streamlit as st
-from snowflake.snowpark.context import get_active_session
 
 st.set_page_config(page_title="TRACE", page_icon="🔍", layout="wide")
-session = get_active_session()
+
+
+def _session():
+    """Snowsight Workspaces hands out a session via st.connection; a deployed
+    Streamlit-in-Snowflake object exposes get_active_session. Support both so
+    the same file runs in either place."""
+    try:
+        from snowflake.snowpark.context import get_active_session
+        return get_active_session()
+    except Exception:
+        return st.connection("snowflake").session()
+
+
+session = _session()
 
 
 @st.cache_data(ttl=300)
