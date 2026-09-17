@@ -116,7 +116,26 @@ Cortex runs the model **next to the data**, under the account's existing RBAC
 and masking policies. Nothing leaves. The compute model is not an
 implementation detail here — it is what makes the method possible.
 
-**CoCo CLI** executes the entire SQL layer against the account, under a
+**CoCo CLI** is the control plane, not the terminal this was typed into. Four
+skills and two subagents in `.cortex/` encode what the project knows:
+
+| skill | what it prevents |
+|---|---|
+| `trace-conventions` | Snowflake dialect traps and architectural invariants that each cost a failed run — no named `WINDOW` clause, `POLICY_AS_OF` not usable per-row, `MATCH_BY_COLUMN_NAME` needing `PARSE_HEADER`, PII never read from a pack payload |
+| `run-lookback` | Running a $25 adjudication to test a prompt. States cost before spending, enforces stage order, and defines the gates that stop a run |
+| `verify-chain` | Reporting a partial failure as "mostly fine", or an empty chain as `INTACT` |
+| `explain-case` | Quoting only the incriminating half of an adjudication, or stating a model probability as a finding of fact |
+
+The subagents are read-only by construction: `case-investigator` cannot query
+`EVAL` or write to `AUDIT`; `chain-auditor` verifies and is explicitly
+instructed not to repair, because a rebuilt chain over altered packs is
+internally consistent and evidentially worthless.
+
+These encode mistakes we actually made. Every dialect trap listed produced a
+failed run during the build; the cost rule exists because the full population
+was adjudicated twice when a 150-row holdout would have answered the question.
+
+CoCo also executes the entire SQL layer against the account, under a
 server-side **Restricted Session Scope** (`--with-restricted-session-scope`) —
 a privilege ceiling that applies while an agent is active and cannot grant more
 than the user already holds. Worth noting its documented boundary: RSS covers
@@ -144,6 +163,8 @@ connection. Knowing where a control stops is part of using it honestly.
 - Streamlit in Snowflake: the gap, the queue, a rendered evidence pack, live
   chain verification, and an evaluation page that refuses to load for roles
   without `EVAL` access
+- Four CoCo skills and two subagents encoding the project's invariants, dialect
+  traps and cost discipline — see below
 
 **Not built yet** — named plainly rather than implied:
 
@@ -164,6 +185,8 @@ sql/14_evidence_packs.sql    hash-chained evidence packs + integrity check
 sql/15_final_metrics.sql     AUC, lift curve, branch concentration
 sql/16_append_only_chain.sql hash chain, INSERT-only
 sql/17_roles_and_masking.sql roles, masking, isolation tests (run in Snowsight)
+.cortex/skills/              CoCo skills: conventions, verify, explain, run
+.cortex/agents/              CoCo subagents: case-investigator, chain-auditor
 .cortex/hooks/               PreToolUse guard on the AUDIT schema
 sql/03–10                    superseded; retained as history
 app/trace_app.py             Streamlit in Snowflake (investigator surface)
