@@ -160,15 +160,20 @@ connection. Knowing where a control stops is part of using it honestly.
 - Column masking: PII redacted per role while the content hash stays identical
 - A `PreToolUse` hook blocking every mutating statement against `AUDIT.*`,
   12 unit tests, no carve-out for our own code
-- Streamlit in Snowflake: the gap, the queue, a rendered evidence pack, live
-  chain verification, and an evaluation page that refuses to load for roles
-  without `EVAL` access
+- Streamlit in Snowflake: the gap, an interactive threshold replay, the queue,
+  a rendered evidence pack, live chain verification, and an evaluation page
+  that refuses to load for roles without `EVAL` access
+- A counterfactual replay engine callable as a function — any threshold, any
+  window, reconstructed over the full transaction record with no model calls
+- A governed semantic view, a Cortex Search service over the policy corpus, and
+  a Cortex Agent joining both
 - Four CoCo skills and two subagents encoding the project's invariants, dialect
   traps and cost discipline — see below
 
 **Not built yet** — named plainly rather than implied:
 
-- Cortex Agent / Cortex Search over a policy corpus, and the LLM→predicate compiler with human certification
+- The LLM→predicate compiler with human certification (rule predicates are
+  currently hand-declared, not extracted from policy text)
 - CI regression gate via `cortex exec` (headless tool allowlisting is unresolved)
 
 ---
@@ -185,6 +190,8 @@ sql/14_evidence_packs.sql    hash-chained evidence packs + integrity check
 sql/15_final_metrics.sql     AUC, lift curve, branch concentration
 sql/16_append_only_chain.sql hash chain, INSERT-only
 sql/17_roles_and_masking.sql roles, masking, isolation tests (run in Snowsight)
+sql/18_counterfactual_replay   replay any threshold; sensitivity curve
+sql/19_semantic_view_and_agent semantic view, policy corpus, Cortex Agent
 .cortex/skills/              CoCo skills: conventions, verify, explain, run
 .cortex/agents/              CoCo subagents: case-investigator, chain-auditor
 .cortex/hooks/               PreToolUse guard on the AUDIT schema
