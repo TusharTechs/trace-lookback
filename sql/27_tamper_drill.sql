@@ -113,8 +113,13 @@ FROM h, c;
 SELECT 'DRILL 1 forged append' AS drill, * FROM AUDIT.V_ACTION_LOG_VERDICT;
 -- expect: broken_links 0, hash_mismatches 1, forked_rows 0, TAMPERED
 
-SELECT link_no, actor, action, link_intact, hash_recomputes, no_fork
-FROM AUDIT.V_ACTION_LOG_VERIFICATION ORDER BY link_no;
+-- Which row failed, and who wrote it. Joined rather than widening the
+-- verification view, so that view keeps exactly one definition (sql/26).
+SELECT v.link_no, l.actor, l.action,
+       v.link_intact, v.hash_recomputes, v.no_fork
+FROM AUDIT.V_ACTION_LOG_VERIFICATION v
+JOIN AUDIT.AUDIT_LOG l ON l.link_no = v.link_no
+ORDER BY v.link_no;
 
 CALL AUDIT.RESET_ACTION_LOG_DEMO();
 
