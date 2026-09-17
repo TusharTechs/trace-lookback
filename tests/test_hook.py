@@ -48,6 +48,14 @@ BLOCKED = [
     ("create function",    "CREATE FUNCTION AUDIT.F() RETURNS STRING AS $$ 'x' $$"),
     ("create table audit", "CREATE TABLE AUDIT.SHADOW (x STRING)"),
     ("create task",        "CREATE TASK AUDIT.T SCHEDULE = '1 minute' AS SELECT 1"),
+    # Blocking CREATE PROCEDURE only closes half the hole. sql/27's tamper
+    # drill needs a human-created procedure in AUDIT that deletes rows; once
+    # it exists, an unconditional CALL permission hands it straight back to
+    # the agent. Calls into AUDIT are allowlisted by name.
+    ("call drill reset",   "CALL AUDIT.RESET_ACTION_LOG_DEMO()"),
+    ("call drill runner",  "CALL TRACE_DB.AUDIT.RUN_TAMPER_DRILLS()"),
+    ("call unknown proc",  "CALL AUDIT.SOMETHING_A_HUMAN_ADDED_LATER()"),
+    ("call quoted",        'CALL "AUDIT"."RESET_ACTION_LOG_DEMO"()'),
     # Evasion attempts.
     ("hidden in comment",  "/* harmless */ UPDATE AUDIT.EVIDENCE_PACK SET payload = NULL"),
     ("line comment",       "-- routine\nDELETE FROM AUDIT.EVIDENCE_CHAIN"),
@@ -63,6 +71,9 @@ ALLOWED = [
     ("count audit",        "SELECT COUNT(*) FROM TRACE_DB.AUDIT.EVIDENCE_CHAIN"),
     ("insert audit",       "INSERT INTO AUDIT.AUDIT_LOG (actor, action) VALUES ('x','y')"),
     ("call procedure",     "CALL AUDIT.BUILD_EVIDENCE_CHAIN()"),
+    ("call record action", "CALL AUDIT.RECORD_CASE_ACTION('CU-1|2026-01-01','a@b','VIEWED','x')"),
+    ("call qualified ok",  "CALL TRACE_DB.AUDIT.RECORD_CASE_ACTION('CU-1|2026-01-01','a@b','VIEWED','x')"),
+    ("call outside audit", "CALL CORE.REPLAY_AT_THRESHOLD(500000, '2026-01-01', '2026-09-16')"),
     ("update elsewhere",   "UPDATE CORE.CUSTOMERS SET risk_rating = 'LOW'"),
     ("delete elsewhere",   "DELETE FROM CORE.DECISION_FEATURES_STG"),
     ("drop elsewhere",     "DROP TABLE CORE.DECISION_FEATURES_STG"),

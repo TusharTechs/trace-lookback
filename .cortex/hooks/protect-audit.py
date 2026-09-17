@@ -8,8 +8,10 @@ prevention half — it refuses to let the agent issue any statement that could
 modify or remove audit records, before the statement reaches Snowflake.
 
 Blocked against AUDIT.*:  UPDATE, DELETE, MERGE, TRUNCATE, DROP, ALTER,
-                          CREATE of any object, GRANT/REVOKE
-Allowed against AUDIT.*:  SELECT, INSERT, CALL, SHOW, DESCRIBE
+                          CREATE of any object, GRANT/REVOKE, and CALL of any
+                          procedure not on CALL_ALLOWLIST
+Allowed against AUDIT.*:  SELECT, INSERT, SHOW, DESCRIBE, and CALL of the two
+                          append-only procedures
 
 WHAT THIS DOES NOT COVER -- stated plainly, because a control whose boundary is
 undocumented is worse than no control:
@@ -18,10 +20,20 @@ undocumented is worse than no control:
      opaque to it -- `CALL X()` reveals nothing about what X does. That is why
      CREATE PROCEDURE and CREATE FUNCTION in AUDIT are refused: an agent that
      can mint a procedure can put an UPDATE inside it and then call it, which
-     turns a documented limitation into a working bypass. Existing procedures
-     may be called; new ones are a human operation in Snowsight.
-     AUDIT.BUILD_EVIDENCE_CHAIN is INSERT-only for the same reason -- nothing
-     in the schema requires an UPDATE, so no exception is carved out.
+     turns a documented limitation into a working bypass. New ones are a
+     human operation in Snowsight.
+
+     Blanket permission to call EXISTING procedures was the remaining half of
+     that hole, and it was a real one: sql/27's tamper drill needs a procedure
+     in AUDIT that deletes rows, created by a human in Snowsight, and once it
+     existed the agent could simply CALL it. Calls into AUDIT are therefore
+     allowlisted by procedure name. A human adding a procedure to AUDIT does
+     not thereby hand the agent a new capability -- adding it here is a second,
+     deliberate act.
+
+     AUDIT.BUILD_EVIDENCE_CHAIN and AUDIT.RECORD_CASE_ACTION are INSERT-only,
+     which is why they are on the list. Nothing in the schema requires an
+     UPDATE, so no exception is carved out.
   2. Snowflake's Restricted Session Scope covers the agent's SQL tool but not
      Bash, Python or MCP tools opening their own connection. This hook covers
      the same surface, so both share that gap. Closing it needs a Snowflake-side
@@ -51,6 +63,18 @@ MUTATING = re.compile(
     r"|CREATE(\s+OR\s+REPLACE)?\s+(TABLE|VIEW|PROCEDURE|FUNCTION|TASK|STREAM)"
     r"|GRANT|REVOKE"
     r")\b",
+    re.IGNORECASE,
+)
+
+# The only procedures in AUDIT the agent may call. Both append and nothing
+# else. Anything a human creates in AUDIT is unreachable from the agent until
+# it is added here on purpose.
+CALL_ALLOWLIST = frozenset({"BUILD_EVIDENCE_CHAIN", "RECORD_CASE_ACTION"})
+
+# CALL AUDIT.X(...), CALL TRACE_DB.AUDIT.X(...), CALL "AUDIT"."X"(...)
+AUDIT_CALL = re.compile(
+    r"\bCALL\s+(?:\"?[A-Z0-9_]+\"?\s*\.\s*)?"
+    r"\"?" + AUDIT_SCHEMA + r"\"?\s*\.\s*\"?([A-Z0-9_]+)",
     re.IGNORECASE,
 )
 
@@ -113,6 +137,10 @@ def offending_statements(sql: str):
         m = MUTATING.search(stmt)
         if m and AUDIT_REF.search(stmt):
             hits.append((m.group(0).upper(), stmt[:200]))
+            continue
+        c = AUDIT_CALL.search(stmt)
+        if c and c.group(1).upper() not in CALL_ALLOWLIST:
+            hits.append((f"CALL AUDIT.{c.group(1).upper()}", stmt[:200]))
     return hits
 
 
@@ -140,7 +168,9 @@ def main() -> int:
         f"{AUDIT_SCHEMA} is append-only. It holds the evidence packs and hash chain "
         f"that would be handed to an examiner; a record that can be edited is not "
         f"evidence.\n"
-        f"Permitted: SELECT, INSERT, CALL. To rebuild the chain use "
+        f"Permitted: SELECT, INSERT, and CALL of "
+        f"{', '.join(sorted(CALL_ALLOWLIST))} -- the only procedures here that "
+        f"exclusively append. To rebuild the chain use "
         f"CALL AUDIT.BUILD_EVIDENCE_CHAIN(), which only inserts."
     )
 

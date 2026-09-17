@@ -478,6 +478,42 @@ elif page.startswith("6"):
             "in sql/26 was found."
         )
 
+    # ---- Evidence that the detector detects --------------------------------
+    st.divider()
+    st.subheader("Was the detector ever tested?")
+    st.markdown(
+        "A verification that has only ever reported `INTACT` is "
+        "indistinguishable from `SELECT 'INTACT'`. These are real attacks, "
+        "run against the real action log as `ACCOUNTADMIN` — the strongest "
+        "adversary this account has — and reseeded afterwards."
+    )
+    drills, d_err = try_q("""
+        SELECT drill, attack, broken_links AS "broken links",
+               hash_mismatches AS "hashes not recomputing",
+               verdict, caught_by AS "caught by"
+        FROM TRACE_DB.AUDIT.TAMPER_DRILL_LOG ORDER BY ord
+    """)
+    if d_err:
+        st.caption("_Drill log not present — run sql/27 in Snowsight._")
+    else:
+        st.dataframe(drills, use_container_width=True, hide_index=True)
+        st.caption(
+            "The two middle rows are the point. A reworded decision changes "
+            "nothing structural, so walking the chain reports it as fine. A "
+            "deleted record leaves every surviving row hashing correctly, so "
+            "recomputation reports it as fine. Each attack is invisible to "
+            "the check that catches the other — which is why there are three."
+        )
+        st.info(
+            "**What this does not prove.** Someone with ACCOUNTADMIN who also "
+            "reads the source can append a *well-formed* forgery: the "
+            "canonical string is public, so a correct hash can be computed. A "
+            "hash chain makes the past tamper-evident, not the present "
+            "unforgeable. Closing that needs the head hash published outside "
+            "the account, or a signing key Snowflake never sees. Neither is "
+            "built here.", icon="⚖️"
+        )
+
     st.divider()
     st.markdown(
         "**The audit schema is append-only.** No role in this system holds "
