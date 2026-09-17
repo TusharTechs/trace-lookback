@@ -24,6 +24,7 @@ TRACE replays every transaction against the corrected rule and adjudicates what 
 | 🧪 **Raw output of every run** | [`eval/`](eval/README.md) — indexed; nothing in this repo is quoted from memory |
 | 🤖 **CoCo skills, subagents, hook** | [`.cortex/`](.cortex/) |
 | 🌐 **Open the live demo** | *(link added at submission)* — public snapshot; verify the hash chain in your own browser |
+| 🌿 **Demo source** | the [`demo`](../../tree/demo) branch — an orphan branch holding only the snapshot app and its exported data |
 | ▶️ **Run it yourself** | [Reproduce](#reproduce) — Windows, macOS, Linux |
 | 🔍 **The single best artifact** | [One case, end to end](#one-case-end-to-end) |
 | 🛡 **Proof the controls work** | [Three tamper drills](EVALUATION.md#the-detector-was-tested-as-an-adversary-and-it-fires) — we attacked our own audit trail as `ACCOUNTADMIN` |
@@ -250,6 +251,11 @@ so they work unchanged on every platform.
 `sql/17_roles_and_masking.sql`, `sql/26_action_log_rebuild.sql` and `sql/27_tamper_drill.sql` are
 run **by a human in Snowsight** — they create objects in `AUDIT`, which this project's own controls
 refuse from the agent. That is the point rather than a defect.
+
+The live application is Streamlit **in** Snowflake, which only opens for someone logged into the
+account holding the data. The public demo on the [`demo`](../../tree/demo) branch is a snapshot of
+it, and recomputes every evidence hash in Python rather than reading a stored verdict — the same
+check, run somewhere the database cannot influence.
 
 `sql/03`–`10`, `21`, `24` and `25` are superseded and kept as history: two failed corpus designs, a
 measurement error, a debugging session, and an action log whose hash chain reported `TAMPERED` on

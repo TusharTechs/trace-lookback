@@ -3,7 +3,8 @@
 --
 -- RUN IN SNOWSIGHT. Run each numbered query, then use the download icon above
 -- the results pane and save it under the exact filename in the heading.
--- Put every file in  public-demo/data/  in the demo repo.
+-- Put every file in  data/  on the `demo` branch of this repository
+--   git checkout demo   →   data/<name>.csv   →   commit and push
 --
 -- Why a snapshot at all: Streamlit in Snowflake is reachable only by someone
 -- logged into this account, and this trial expires around 16 Oct -- during the
