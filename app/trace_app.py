@@ -5,10 +5,11 @@ The investigator-facing surface. Deliberately not a dashboard: it walks the
 argument in the order the argument is made.
 
   1. The gap        activity that raised no alert and has no file
-  2. The queue      what the lookback produced, as work
-  3. A case         one evidence pack, with the rule then and now
-  4. Integrity      the chain, verified rather than asserted
-  5. Evaluation     how well it worked -- requires privileged access, by design
+  2. Replay         any candidate rule, recomputed over the full record
+  3. The queue      what the lookback produced, as work
+  4. A case         one evidence pack, with the rule then and now
+  5. Integrity      the chain, verified rather than asserted
+  6. Evaluation     how well it worked -- requires privileged access, by design
 
 Runs entirely inside Snowflake. No data leaves the account; there is no
 external service and no API key.
@@ -53,8 +54,8 @@ st.sidebar.title("TRACE")
 st.sidebar.caption("Regulatory Lookback & Decision Replay")
 page = st.sidebar.radio(
     "",
-    ["1 · The gap", "2 · Escalation queue", "3 · Evidence pack",
-     "4 · Chain integrity", "5 · Evaluation"],
+    ["1 · The gap", "2 · Replay any rule", "3 · Escalation queue",
+     "4 · Evidence pack", "5 · Chain integrity", "6 · Evaluation"],
     label_visibility="collapsed",
 )
 st.sidebar.divider()
@@ -110,9 +111,67 @@ if page.startswith("1"):
     )
 
 # ---------------------------------------------------------------------------
-# 2. Escalation queue
+# 2. Counterfactual replay
 # ---------------------------------------------------------------------------
 elif page.startswith("2"):
+    st.title("Replay any rule")
+    st.markdown(
+        "The case study is one policy change. The engine is general: give it "
+        "any threshold and it reconstructs, across **607,307 transactions**, "
+        "which customer-weeks that rule would have caught and which the bank "
+        "actually alerted on.\n\n"
+        "No model is involved. This is deterministic SQL, so a regulator can "
+        "re-derive every number on this page."
+    )
+
+    thr = st.slider(
+        "Candidate threshold (₹)",
+        min_value=500_000, max_value=1_200_000, value=800_000, step=50_000,
+        format="₹%d",
+    )
+
+    r = q(f"""
+        SELECT * FROM TABLE(TRACE_DB.POLICY.REPLAY_SUMMARY(
+            {thr}::FLOAT, '2025-07-01'::DATE, '2026-08-13'::DATE))
+    """).iloc[0]
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Would be caught", f"{int(r['WOULD_CATCH']):,}")
+    c2.metric("Actually alerted", f"{int(r['ALREADY_ALERTED']):,}")
+    c3.metric("Never alerted", f"{int(r['NEWLY_CAPTURED']):,}",
+              delta=f"{int(r['NEWLY_CAPTURED']):,} missed", delta_color="inverse")
+    c4.metric("Unreviewed notional", f"₹{r['NEWLY_CAPTURED_CR']} Cr")
+
+    if int(r["NEWLY_CAPTURED"]) == 0:
+        st.success(
+            "At ₹10,00,000 nothing is newly captured — that was the rule in "
+            "force, so by definition it missed nothing relative to itself. "
+            "Move the slider down and the cost of the calibration appears.",
+            icon="✅",
+        )
+    else:
+        st.error(
+            f"**{int(r['NEWLY_CAPTURED']):,} customer-weeks** across "
+            f"**{int(r['DISTINCT_CUSTOMERS'])} customers** would have alerted "
+            f"under a ₹{thr:,} threshold and did not. No alert, no "
+            f"disposition, no file — nothing for a sampling review to find.",
+            icon="🚨",
+        )
+
+    st.subheader("The whole decision surface")
+    curve = q("SELECT * FROM TRACE_DB.POLICY.V_THRESHOLD_SENSITIVITY")
+    st.line_chart(curve.set_index("THRESHOLD")["NEWLY_CAPTURED"])
+    st.dataframe(curve, use_container_width=True, hide_index=True, height=260)
+    st.caption(
+        "A threshold-tuning exercise produces this after weeks of consultant "
+        "time on a sample of a few hundred alerts. Here it is computed over "
+        "the full transaction record, in seconds, at every candidate value."
+    )
+
+# ---------------------------------------------------------------------------
+# 3. Escalation queue
+# ---------------------------------------------------------------------------
+elif page.startswith("3"):
     st.title("The queue, as work")
 
     bands = q("""
@@ -148,9 +207,9 @@ elif page.startswith("2"):
     )
 
 # ---------------------------------------------------------------------------
-# 3. Evidence pack
+# 4. Evidence pack
 # ---------------------------------------------------------------------------
-elif page.startswith("3"):
+elif page.startswith("4"):
     st.title("One case")
 
     refs = q("""
@@ -206,9 +265,9 @@ elif page.startswith("3"):
     st.code(f"content_hash  {pack['CONTENT_HASH']}\nchain_hash    {pack['CHAIN_HASH']}")
 
 # ---------------------------------------------------------------------------
-# 4. Chain integrity
+# 5. Chain integrity
 # ---------------------------------------------------------------------------
-elif page.startswith("4"):
+elif page.startswith("5"):
     st.title("Integrity, verified not asserted")
     st.markdown(
         "Each pack's hash incorporates the previous one. Editing, removing or "
@@ -269,7 +328,7 @@ elif page.startswith("4"):
     )
 
 # ---------------------------------------------------------------------------
-# 5. Evaluation — needs EVAL, which most roles cannot read
+# 6. Evaluation — needs EVAL, which most roles cannot read
 # ---------------------------------------------------------------------------
 else:
     st.title("How well it worked")
