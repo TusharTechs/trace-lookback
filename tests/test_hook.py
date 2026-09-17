@@ -41,6 +41,13 @@ BLOCKED = [
     ("replace view",       "CREATE OR REPLACE VIEW AUDIT.V_CHAIN_VERIFICATION AS SELECT 1"),
     # An agent that can grant on audit objects can grant itself write access.
     ("grant",              "GRANT UPDATE ON TABLE AUDIT.EVIDENCE_PACK TO ROLE PUBLIC"),
+    # Minting a procedure in AUDIT turns "the hook cannot see inside a stored
+    # procedure" from a documented limitation into a working bypass: put an
+    # UPDATE in the body, then CALL it. Both statements would otherwise pass.
+    ("create procedure",   "CREATE OR REPLACE PROCEDURE AUDIT.SNEAKY() RETURNS STRING AS $$ BEGIN UPDATE AUDIT.EVIDENCE_PACK SET payload = NULL; END; $$"),
+    ("create function",    "CREATE FUNCTION AUDIT.F() RETURNS STRING AS $$ 'x' $$"),
+    ("create table audit", "CREATE TABLE AUDIT.SHADOW (x STRING)"),
+    ("create task",        "CREATE TASK AUDIT.T SCHEDULE = '1 minute' AS SELECT 1"),
     # Evasion attempts.
     ("hidden in comment",  "/* harmless */ UPDATE AUDIT.EVIDENCE_PACK SET payload = NULL"),
     ("line comment",       "-- routine\nDELETE FROM AUDIT.EVIDENCE_CHAIN"),
@@ -60,7 +67,6 @@ ALLOWED = [
     ("delete elsewhere",   "DELETE FROM CORE.DECISION_FEATURES_STG"),
     ("drop elsewhere",     "DROP TABLE CORE.DECISION_FEATURES_STG"),
     ("replace view core",  "CREATE OR REPLACE VIEW CORE.V_CASE_LEDGER AS SELECT 1"),
-    ("create audit table", "CREATE TABLE AUDIT.NEW_THING (x STRING)"),
 ]
 
 

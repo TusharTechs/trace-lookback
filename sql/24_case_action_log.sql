@@ -14,6 +14,17 @@
 -- holds UPDATE on AUDIT, and the PreToolUse hook refuses the statement before
 -- it reaches Snowflake. A disposition recorded in error is corrected by
 -- appending a superseding action, which is how a case file works on paper too.
+--
+-- RUN THIS IN SNOWSIGHT AS ACCOUNTADMIN.
+--
+-- Creating objects in AUDIT and granting on them are refused by our own hook,
+-- for the same reason sql/17 is a human script: an agent that can mint a
+-- procedure in the evidence schema can put an UPDATE inside it and call it,
+-- and an agent that can grant on audit objects can grant itself write access.
+-- Defining the evidence surface is a human operation.
+--
+-- The CALLs in section 4 run anywhere -- calling an existing procedure is
+-- permitted. Only the DDL and the grants need Snowsight.
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;

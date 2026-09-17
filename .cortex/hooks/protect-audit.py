@@ -8,16 +8,20 @@ prevention half — it refuses to let the agent issue any statement that could
 modify or remove audit records, before the statement reaches Snowflake.
 
 Blocked against AUDIT.*:  UPDATE, DELETE, MERGE, TRUNCATE, DROP, ALTER,
-                          CREATE OR REPLACE, GRANT/REVOKE on audit objects
+                          CREATE of any object, GRANT/REVOKE
 Allowed against AUDIT.*:  SELECT, INSERT, CALL, SHOW, DESCRIBE
 
 WHAT THIS DOES NOT COVER -- stated plainly, because a control whose boundary is
 undocumented is worse than no control:
 
-  1. It inspects the SQL text the agent submits. A stored procedure can do
-     anything server-side and this hook only sees `CALL X()`. AUDIT.BUILD_
-     EVIDENCE_CHAIN is INSERT-only for exactly this reason; nothing in the
-     schema requires an UPDATE, so no exception is carved out here.
+  1. It inspects the SQL text the agent submits, so a stored procedure is
+     opaque to it -- `CALL X()` reveals nothing about what X does. That is why
+     CREATE PROCEDURE and CREATE FUNCTION in AUDIT are refused: an agent that
+     can mint a procedure can put an UPDATE inside it and then call it, which
+     turns a documented limitation into a working bypass. Existing procedures
+     may be called; new ones are a human operation in Snowsight.
+     AUDIT.BUILD_EVIDENCE_CHAIN is INSERT-only for the same reason -- nothing
+     in the schema requires an UPDATE, so no exception is carved out.
   2. Snowflake's Restricted Session Scope covers the agent's SQL tool but not
      Bash, Python or MCP tools opening their own connection. This hook covers
      the same surface, so both share that gap. Closing it needs a Snowflake-side
@@ -44,7 +48,7 @@ MUTATING = re.compile(
     r"|TRUNCATE(\s+TABLE)?"
     r"|DROP\s+(TABLE|VIEW|SCHEMA|PROCEDURE|STAGE)"
     r"|ALTER\s+(TABLE|VIEW|SCHEMA)"
-    r"|CREATE\s+OR\s+REPLACE\s+(TABLE|VIEW)"
+    r"|CREATE(\s+OR\s+REPLACE)?\s+(TABLE|VIEW|PROCEDURE|FUNCTION|TASK|STREAM)"
     r"|GRANT|REVOKE"
     r")\b",
     re.IGNORECASE,
