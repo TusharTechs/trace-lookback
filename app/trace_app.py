@@ -8,8 +8,9 @@ argument in the order the argument is made.
   2. Replay         any candidate rule, recomputed over the full record
   3. The queue      what the lookback produced, as work
   4. A case         one evidence pack, with the rule then and now
-  5. Integrity      the chain, verified rather than asserted
-  6. Evaluation     how well it worked -- requires privileged access, by design
+  5. Provenance     where the rule came from, and who signed for it
+  6. Integrity      the chain, verified rather than asserted
+  7. Evaluation     how well it worked -- requires privileged access, by design
 
 Runs entirely inside Snowflake. No data leaves the account; there is no
 external service and no API key.
@@ -55,7 +56,8 @@ st.sidebar.caption("Regulatory Lookback & Decision Replay")
 page = st.sidebar.radio(
     "",
     ["1 · The gap", "2 · Replay any rule", "3 · Escalation queue",
-     "4 · Evidence pack", "5 · Chain integrity", "6 · Evaluation"],
+     "4 · Evidence pack", "5 · Where the rule comes from",
+     "6 · Chain integrity", "7 · Evaluation"],
     label_visibility="collapsed",
 )
 st.sidebar.divider()
@@ -265,9 +267,92 @@ elif page.startswith("4"):
     st.code(f"content_hash  {pack['CONTENT_HASH']}\nchain_hash    {pack['CHAIN_HASH']}")
 
 # ---------------------------------------------------------------------------
-# 5. Chain integrity
+# 5. Where the rule comes from
 # ---------------------------------------------------------------------------
 elif page.startswith("5"):
+    st.title("Where the rule comes from")
+    st.markdown(
+        "The thresholds this engine enforces are not typed in. They are "
+        "extracted from the policy document by a model, **certified by a "
+        "human**, and only then executed — by SQL, never by the model.\n\n"
+        "The model reads prose, which is what models are good at. It never "
+        "decides an outcome."
+    )
+
+    st.subheader("1 · What the model proposed")
+    queue = q("""
+        SELECT threshold_value, effective_from, effective_to, window_days,
+               threshold_provenance, effective_to_provenance, source_quote
+        FROM TRACE_DB.POLICY.V_CERTIFICATION_QUEUE
+        ORDER BY effective_from
+    """)
+    st.dataframe(queue, use_container_width=True, hide_index=True)
+    st.caption(
+        "Each field is marked by whether the quoted sentence supports it. The "
+        "model derived two `effective_to` dates from the following period's "
+        "start — correct, but not stated in the document. A value read from "
+        "the text and a value worked out are different things to a regulator, "
+        "so the certifier sees which is which."
+    )
+
+    st.subheader("2 · Did it agree with the rule we enforce?")
+    ver = q("""
+        SELECT v.effective_from,
+               r.threshold_value AS hand_declared,
+               c.threshold_value AS extracted,
+               CASE WHEN c.threshold_value IS NULL THEN 'NOT EXTRACTED'
+                    WHEN r.threshold_value = c.threshold_value THEN 'MATCH'
+                    ELSE 'DISAGREES' END AS verdict
+        FROM TRACE_DB.POLICY.POLICY_VERSIONS v
+        JOIN TRACE_DB.POLICY.RULE_PREDICATES r USING (policy_version_id)
+        LEFT JOIN TRACE_DB.POLICY.CANDIDATE_PREDICATES c
+               ON c.effective_from = v.effective_from
+        ORDER BY 1
+    """)
+    st.dataframe(ver, use_container_width=True, hide_index=True)
+    st.caption(
+        "The compiler was never told the answer. It read the policy and "
+        "independently reproduced all three thresholds the replay engine "
+        "already enforced. A disagreement here would mean one of the two "
+        "is wrong."
+    )
+
+    st.subheader("3 · What is actually enforceable")
+    enf = q("SELECT COUNT(*) AS n FROM TRACE_DB.POLICY.V_ENFORCEABLE_PREDICATES")
+    n_enf = int(enf.iloc[0]["N"])
+    cert = q("""
+        SELECT threshold_value, effective_from, certified_by,
+               certification_still_valid
+        FROM TRACE_DB.POLICY.V_CERTIFIED_PREDICATES ORDER BY effective_from
+    """)
+
+    if n_enf == 0 and len(cert):
+        st.warning(
+            "**Nothing is currently enforceable.** A predicate was certified, "
+            "then the source document was amended. Nobody revoked the "
+            "approval — it lapsed, because certification binds to a hash of "
+            "the text rather than to a row. The rule cannot be enforced again "
+            "until someone re-reads the amended policy and re-signs.",
+            icon="🔒",
+        )
+    elif n_enf == 0:
+        st.info("Nothing certified yet. The model proposed; nobody has signed.",
+                icon="ℹ️")
+    else:
+        st.success(f"{n_enf} predicate(s) certified and enforceable.", icon="✅")
+
+    if len(cert):
+        st.dataframe(cert, use_container_width=True, hide_index=True)
+
+    st.caption(
+        "Approval attaches to a specific text, not to a database row. That is "
+        "what a supervisor expects and what software almost never does."
+    )
+
+# ---------------------------------------------------------------------------
+# 6. Chain integrity
+# ---------------------------------------------------------------------------
+elif page.startswith("6"):
     st.title("Integrity, verified not asserted")
     st.markdown(
         "Each pack's hash incorporates the previous one. Editing, removing or "
@@ -328,7 +413,7 @@ elif page.startswith("5"):
     )
 
 # ---------------------------------------------------------------------------
-# 6. Evaluation — needs EVAL, which most roles cannot read
+# 7. Evaluation — needs EVAL, which most roles cannot read
 # ---------------------------------------------------------------------------
 else:
     st.title("How well it worked")
