@@ -141,10 +141,12 @@ connection. Knowing where a control stops is part of using it honestly.
 - Column masking: PII redacted per role while the content hash stays identical
 - A `PreToolUse` hook blocking every mutating statement against `AUDIT.*`,
   12 unit tests, no carve-out for our own code
+- Streamlit in Snowflake: the gap, the queue, a rendered evidence pack, live
+  chain verification, and an evaluation page that refuses to load for roles
+  without `EVAL` access
 
 **Not built yet** — named plainly rather than implied:
 
-- Streamlit interface
 - Cortex Agent / Cortex Search over a policy corpus, and the LLM→predicate compiler with human certification
 - CI regression gate via `cortex exec` (headless tool allowlisting is unresolved)
 
@@ -164,6 +166,7 @@ sql/16_append_only_chain.sql hash chain, INSERT-only
 sql/17_roles_and_masking.sql roles, masking, isolation tests (run in Snowsight)
 .cortex/hooks/               PreToolUse guard on the AUDIT schema
 sql/03–10                    superseded; retained as history
+app/trace_app.py             Streamlit in Snowflake (investigator surface)
 generator/generate.py        synthetic corpus (seeded, deterministic)
 generator/load.py            optional Python loader
 eval/                        raw outputs of every run
