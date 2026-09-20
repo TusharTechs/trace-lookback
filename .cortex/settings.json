@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .cortex/hooks/run-guard.py",
+            "command": "sh -c 'd=\"$PWD\"; while [ \"$d\" != \"/\" ]; do if [ -f \"$d/.cortex/hooks/run-guard.py\" ]; then exec python3 \"$d/.cortex/hooks/run-guard.py\"; fi; d=$(dirname \"$d\"); done; echo \"protect-audit: guard not found above $PWD - run cortex from inside the repo\" >&2; exit 2'",
             "timeout": 15
           }
         ]

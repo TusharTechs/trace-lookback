@@ -618,6 +618,33 @@ control, because it is believed.** This is the seventh result in this project
 that passed for the wrong reason, and the only one where the thing being
 checked did not exist at all.
 
+#### And then it failed the other way
+
+Later the same day the guard blocked *everything*, including `SELECT`s, with
+an error naming a path under `$HOME`. The command was
+`python3 .cortex/hooks/run-guard.py` — relative — and the session had been
+started from a sibling git worktree holding the demo branch, which has no
+`.cortex/` at all. The file was not found, `python3` exited non-zero, and
+**CoCo cannot distinguish "the guard says block" from "the guard crashed"**,
+so every statement was refused.
+
+Both halves of that asymmetry are worth stating together, because they are
+opposite failures of the same design:
+
+| fault | exit code | result |
+|---|---|---|
+| interpreter missing (`python` alias) | 127 | **silently permitted** |
+| guard file missing (wrong directory) | 2 | everything blocked |
+
+Failing closed is the better of the two, but neither is acceptable from a
+control that is supposed to be legible. The command now walks up from the
+working directory to locate the guard, so it resolves from any directory
+inside the repository, and prints a specific reason when it cannot find it
+rather than an interpreter's file-not-found. A test runs the configured
+command from three subdirectories and asserts that destructive statements are
+refused and harmless ones are not; it was confirmed to fail against the
+relative path before being committed.
+
 Re-verified live in CoCo after the fix, 20 September:
 
 ```

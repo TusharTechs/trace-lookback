@@ -9,6 +9,7 @@ Run:  uv run --with pytest pytest -q
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -199,8 +200,55 @@ def test_hook_command_does_not_rely_on_a_bare_python():
     settings = json.loads((ROOT / ".cortex" / "settings.json").read_text())
     for entry in settings["hooks"]["PreToolUse"]:
         for hook in entry["hooks"]:
-            interpreter = hook["command"].split()[0]
-            assert interpreter != "python", (
-                "hook invokes bare `python`; use `python3` or an absolute path "
-                "(Windows users: change this to `python` locally, see README)"
+            cmd = hook["command"]
+            # The interpreter now sits inside an `sh -c` wrapper, so checking
+            # only the first word would pass trivially and prove nothing.
+            assert not re.search(r"(^|[\s;&|])python(?![0-9])", cmd), (
+                f"hook invokes bare `python`: {cmd!r}\n"
+                "Use `python3` or an absolute path. `python` is absent on many "
+                "systems and, here, exists only as an interactive-shell alias, "
+                "so a non-interactive hook gets 127 and the statement is "
+                "silently permitted. (Windows: see README.)"
             )
+
+
+def test_hook_resolves_from_a_subdirectory():
+    """CoCo does not always run with the repo root as its working directory.
+
+    The command was `python3 .cortex/hooks/run-guard.py` -- a relative path.
+    Run from anywhere else the file is not found, python exits non-zero, and
+    CoCo cannot tell "the guard says block" from "the guard crashed", so it
+    blocks every statement including SELECTs. That happened for real: a
+    session started in a sibling worktree bricked itself, and the agent
+    reported the guard as missing.
+
+    The command now walks up from $PWD to find the guard, so it works from
+    any directory inside the repo.
+    """
+    settings = json.loads((ROOT / ".cortex" / "settings.json").read_text())
+    cmd = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+
+    venv = os.environ.get("VIRTUAL_ENV")
+    uv_cache = str(pathlib.Path.home() / ".cache" / "uv")
+    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    env["PATH"] = os.pathsep.join(
+        d for d in env.get("PATH", "").split(os.pathsep)
+        if ".venv" not in d and not d.startswith(uv_cache)
+        and not (venv and d.startswith(venv))
+    )
+
+    def run(sql, cwd):
+        return subprocess.run(
+            cmd, shell=True, cwd=cwd, env=env, capture_output=True, text=True,
+            input=json.dumps({"tool_name": "sql_execute",
+                              "tool_input": {"statement": sql}}),
+        ).returncode
+
+    for sub in ("sql", "tests", ".cortex/hooks"):
+        d = ROOT / sub
+        if not d.is_dir():
+            continue
+        assert run("DELETE FROM AUDIT.EVIDENCE_CHAIN", d) == BLOCK, \
+            f"destructive statement not blocked when run from {sub}/"
+        assert run("SELECT * FROM AUDIT.EVIDENCE_PACK", d) == ALLOW, \
+            f"harmless SELECT wrongly blocked when run from {sub}/"
