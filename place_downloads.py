@@ -72,8 +72,16 @@ SIGNATURES: dict[str, set[str]] = {
 }
 
 
-def jaccard(a: set[str], b: set[str]) -> float:
-    return len(a & b) / len(a | b) if a | b else 0.0
+def coverage(cols: set[str], sig: set[str]) -> float:
+    """How much of the signature the file actually contains.
+
+    This was Jaccard, which is wrong for wide tables: the
+    V_EVIDENCE_PACK_RENDER exports carry 20 columns against a 7-column
+    signature, giving 7/20 = 0.35 and a rejection. What matters is whether
+    every column the signature names is present, not whether the file has
+    extra ones. Ties are broken by signature size, so a specific match wins
+    over a general one."""
+    return len(cols & sig) / len(sig) if sig else 0.0
 
 
 def looks_masked(df: pd.DataFrame) -> bool:
@@ -129,16 +137,22 @@ def main() -> int:
         except Exception as e:
             skipped.append((f, f"unreadable ({type(e).__name__})"))
             continue
-        cols = {c.strip().lower() for c in df.columns}
+        # Normalise here, not just for matching. looks_masked() reads column
+        # names too, and Snowsight exports them upper case -- so it silently
+        # returned False for both role exports, filed the MASKED file as
+        # privileged and dropped the real one as a duplicate. That would have
+        # inverted the whole point of the two-role comparison.
+        df.columns = [c.strip().lower() for c in df.columns]
+        cols = set(df.columns)
 
         best, score = max(
-            ((n, jaccard(cols, sig)) for n, sig in SIGNATURES.items()),
-            key=lambda t: t[1],
+            ((n, coverage(cols, sig)) for n, sig in SIGNATURES.items()),
+            key=lambda t: (t[1], len(SIGNATURES[t[0]])),
         )
-        if score < 0.45:
+        if score < 0.60:
             unrelated += 1            # counted, not listed
             continue
-        if score < 0.75:
+        if score < 0.90:
             # Close enough to be worth naming: probably one of ours, exported
             # with the wrong query or truncated.
             skipped.append((f, f"looks like {best} but only {score:.0%} match"))
@@ -165,7 +179,11 @@ def main() -> int:
     # pack_render is one signature but two files, one per role.
     expected = (set(SIGNATURES) - {"pack_render"}) | {
         "pack_render_privileged", "pack_render_masked"}
-    missing = sorted(expected - set(placed))
+    # Count what is already on disk, not just what this run placed. The
+    # first version listed all fifteen as missing after a run that placed
+    # nothing, which read as catastrophic and was simply wrong.
+    on_disk = {n for n in expected if (DATA / f"{n}.csv").exists()}
+    missing = sorted(expected - on_disk)
 
     if skipped:
         print("\nneeds a look")
@@ -174,7 +192,8 @@ def main() -> int:
     if unrelated:
         print(f"\n{unrelated} unrelated CSV(s) ignored")
 
-    print(f"\nplaced {len(placed)} file(s) in data/")
+    print(f"\nplaced {len(placed)} file(s) this run; {len(on_disk)} of "
+          f"{len(expected)} present in data/")
     if missing:
         print(f"still missing {len(missing)}:")
         for m in missing:
