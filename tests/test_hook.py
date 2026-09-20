@@ -7,6 +7,8 @@ Run:  uv run --with pytest pytest -q
 """
 
 import json
+import os
+import pathlib
 import subprocess
 import sys
 from pathlib import Path
@@ -124,3 +126,81 @@ def test_shim_matches_direct_invocation():
         shim = subprocess.run([sys.executable, str(SHIM)], input=payload,
                               capture_output=True, text=True).returncode
         assert direct == shim, f"shim and guard disagree on: {sql}"
+
+def test_the_command_coco_actually_runs_is_wired_up():
+    """The guard was dead in CoCo for two days and every test above passed.
+
+    Those tests invoke the script with sys.executable. CoCo invokes whatever
+    string sits in .cortex/settings.json, through a NON-interactive shell.
+    Commit c4c3adb -- "Repo hardening: tests, cross-platform" -- changed that
+    string from `python3` to `python`. On this machine `python` is an
+    interactive-shell alias, so a non-interactive shell returns 127, CoCo sees
+    an exit code that is not 2, and the statement is allowed through.
+
+    A control that is present, tested and not wired up is worse than no
+    control, because it is believed. This test runs the configured command the
+    way CoCo does and asserts it still refuses.
+    """
+    settings = json.loads((ROOT / ".cortex" / "settings.json").read_text())
+    entries = settings["hooks"]["PreToolUse"]
+    commands = [h["command"] for e in entries for h in e["hooks"]]
+    assert commands, "no PreToolUse hook command configured"
+
+    payload = json.dumps({"tool_name": "sql_execute",
+                          "tool_input": {"statement": "DELETE FROM AUDIT.EVIDENCE_CHAIN"}})
+
+    # Run it the way CoCo does, NOT the way pytest happens to be running.
+    #
+    # The first version of this test passed against the broken `python`
+    # command, because pytest runs through `uv`, which creates an ephemeral
+    # virtualenv under ~/.cache/uv and puts its bin -- containing a `python`
+    # -- first on PATH. Stripping only ".venv" missed it and the test still
+    # passed. CoCo's hook gets no virtualenv at all. A test that passes
+    # because of its own environment is exactly the failure this test exists
+    # to catch, so every virtualenv directory is removed.
+    venv = os.environ.get("VIRTUAL_ENV")
+    uv_cache = str(pathlib.Path.home() / ".cache" / "uv")
+
+    def from_a_virtualenv(d: str) -> bool:
+        return (".venv" in d) or d.startswith(uv_cache) or (venv and d.startswith(venv))
+
+    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    env["PATH"] = os.pathsep.join(
+        d for d in env.get("PATH", "").split(os.pathsep) if not from_a_virtualenv(d)
+    )
+
+    for cmd in commands:
+        r = subprocess.run(cmd, shell=True, input=payload,
+                           capture_output=True, text=True, cwd=ROOT, env=env)
+        assert r.returncode == BLOCK, (
+            f"configured hook command did not block: {cmd!r} "
+            f"exited {r.returncode} (127 means the interpreter was not found "
+            f"outside a virtualenv -- which is how CoCo runs it)"
+        )
+
+
+def test_hook_matcher_covers_the_sql_tool():
+    """A correct command on the wrong matcher is the same silent failure."""
+    settings = json.loads((ROOT / ".cortex" / "settings.json").read_text())
+    matchers = [e.get("matcher") for e in settings["hooks"]["PreToolUse"]]
+    assert "sql_execute" in matchers, (
+        f"PreToolUse does not match sql_execute; matchers are {matchers}"
+    )
+
+
+def test_hook_command_does_not_rely_on_a_bare_python():
+    """Environment-independent version of the check above.
+
+    `python` is absent on many systems and, on this one, exists only as an
+    interactive-shell alias -- so a non-interactive hook gets 127 and CoCo
+    treats the statement as permitted. Requiring `python3` or an absolute
+    path removes the trap regardless of who runs the tests and how.
+    """
+    settings = json.loads((ROOT / ".cortex" / "settings.json").read_text())
+    for entry in settings["hooks"]["PreToolUse"]:
+        for hook in entry["hooks"]:
+            interpreter = hook["command"].split()[0]
+            assert interpreter != "python", (
+                "hook invokes bare `python`; use `python3` or an absolute path "
+                "(Windows users: change this to `python` locally, see README)"
+            )

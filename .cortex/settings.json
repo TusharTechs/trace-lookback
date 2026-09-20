@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .cortex/hooks/run-guard.py",
+            "command": "python3 .cortex/hooks/run-guard.py",
             "timeout": 15
           }
         ]

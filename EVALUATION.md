@@ -565,6 +565,59 @@ through the agent at all.** `sql/17_roles_and_masking.sql` must be run by a
 human in Snowsight. That is the control working, and no exception was carved
 out to make development more convenient.
 
+#### The hook was dead for two days, and every test passed
+
+On 20 September, dry-running the demo in CoCo produced this line:
+
+```
+› [Hook: PreToolUse]: zsh:1: command not found: python
+```
+
+`.cortex/settings.json` invoked the guard as `python .cortex/hooks/run-guard.py`.
+On this machine `python` exists only as an interactive-shell alias for
+`python3`; CoCo runs hooks through a **non-interactive** shell, where aliases
+do not apply. The shell returned 127, CoCo saw an exit code that was not 2, and
+the statement was allowed through. Measured directly:
+
+| configured command | exit code | effect |
+|---|---|---|
+| `python3 .cortex/hooks/run-guard.py` | **2** | blocked |
+| `python .cortex/hooks/run-guard.py` | **127** | silently permitted |
+
+The regression came from commit `c4c3adb`, *"Repo hardening: tests,
+cross-platform, brand, architecture diagrams"* — which changed the command from
+`python3` to `python` while adding a cross-platform shim. **The commit whose
+stated purpose was hardening disabled the control it was hardening.**
+
+It went unnoticed because `tests/test_hook.py` invoked the guard with
+`sys.executable`. Thirteen tests covered the guard's *logic* — evasion via
+comments, statements buried in batches, `CREATE PROCEDURE` in `AUDIT` — and not
+one covered whether the thing was **wired up**. The logic was never the weak
+part.
+
+What this changes about the earlier claim in this section: the live refusal
+recorded in `eval/19_roles_and_masking.md` was real, and was produced before
+`c4c3adb`. Between that commit and the fix, the client-side guard was not
+running. The database-level control — no role holding `UPDATE` or `DELETE` on
+`AUDIT` — was in force throughout, which is why this is a defence-in-depth
+failure rather than an exposure. That distinction is the only reason it was not
+worse, and it is exactly why the hook was always described here as the second
+layer rather than the control.
+
+Two tests now close the gap. One runs whatever command `settings.json`
+actually contains, through a shell, with every virtualenv stripped from `PATH`,
+and asserts it still exits 2. The other asserts the interpreter is not a bare
+`python`. Both were confirmed to fail against the broken command before being
+committed — the first version of the running test passed against it, because
+pytest runs under `uv`, which puts an ephemeral virtualenv containing a
+`python` binary first on `PATH`. A test that passes because of its own
+environment is the same class of error it was written to catch.
+
+**A control that is present, documented and not wired up is worse than no
+control, because it is believed.** This is the seventh result in this project
+that passed for the wrong reason, and the only one where the thing being
+checked did not exist at all.
+
 What the hook does **not** cover, stated because an undocumented boundary is
 worse than no control: it inspects client-submitted SQL, so a stored procedure
 is opaque to it; and like Snowflake's Restricted Session Scope it does not cover
