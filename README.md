@@ -24,7 +24,7 @@ TRACE replays every transaction against the corrected rule and adjudicates what 
 | 🧪 **Raw output of every run** | [`eval/`](eval/README.md) — indexed; nothing in this repo is quoted from memory |
 | 🤖 **CoCo skills, subagents, hook** | [`.cortex/`](.cortex/) |
 | 🌐 **Open the live demo** | **[trace-lookback.streamlit.app](https://trace-lookback.streamlit.app)** — recompute all 687 evidence hashes in your own browser |
-| 🎬 **Watch the 4-minute demo** | *(YouTube link at submission)* — the whole workflow driven from CoCo CLI |
+| 🎬 **Watch the 5-minute demo** | **[youtu.be/lFz97OiEOMI](https://youtu.be/lFz97OiEOMI)** — the whole workflow driven from CoCo CLI |
 | ⌨️ **How CoCo CLI drives it** | [CoCo CLI as the control plane](#coco-cli-as-the-control-plane) — 4 skills, 2 subagents, a `PreToolUse` guard |
 | 🌿 **Demo source** | the [`demo`](../../tree/demo) branch — an orphan branch holding only the snapshot app and its exported data |
 | ▶️ **Run it yourself** | [Reproduce](#reproduce) — Windows, macOS, Linux |
