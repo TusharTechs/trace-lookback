@@ -23,11 +23,19 @@ TRACE replays every transaction against the corrected rule and adjudicates what 
 | 🏗 **Architecture diagrams** | [`docs/architecture.md`](docs/architecture.md) |
 | 🧪 **Raw output of every run** | [`eval/`](eval/README.md) — indexed; nothing in this repo is quoted from memory |
 | 🤖 **CoCo skills, subagents, hook** | [`.cortex/`](.cortex/) |
-| 🌐 **Open the live demo** | *(link added at submission)* — public snapshot; verify the hash chain in your own browser |
+| 🌐 **Open the live demo** | **[trace-lookback.streamlit.app](https://trace-lookback.streamlit.app)** — recompute all 687 evidence hashes in your own browser |
+| 🎬 **Watch the 4-minute demo** | *(YouTube link at submission)* — the whole workflow driven from CoCo CLI |
+| ⌨️ **How CoCo CLI drives it** | [CoCo CLI as the control plane](#coco-cli-as-the-control-plane) — 4 skills, 2 subagents, a `PreToolUse` guard |
 | 🌿 **Demo source** | the [`demo`](../../tree/demo) branch — an orphan branch holding only the snapshot app and its exported data |
 | ▶️ **Run it yourself** | [Reproduce](#reproduce) — Windows, macOS, Linux |
 | 🔍 **The single best artifact** | [One case, end to end](#one-case-end-to-end) |
 | 🛡 **Proof the controls work** | [Three tamper drills](EVALUATION.md#the-detector-was-tested-as-an-adversary-and-it-fires) — we attacked our own audit trail as `ACCOUNTADMIN` |
+
+<p align="center">
+  <img src="docs/screenshots/02-hook-blocks-the-agent.png" alt="CoCo CLI: the PreToolUse hook refusing an UPDATE against the AUDIT schema" width="860">
+  <br>
+  <em>The agent is asked to change a score. The guard refuses it before it reaches Snowflake.</em>
+</p>
 
 **Headline:** 2,759 customer-weeks and ₹247 crore raised no alert for thirteen months.
 TRACE recovered **1,131 of the 1,331 genuinely suspicious weeks** (recall 0.850) for about **$15**,
@@ -305,6 +313,16 @@ EVALUATION.md                   what was measured, and what it does not show
 ```
 
 ---
+
+## What it looks like
+
+| | |
+|---|---|
+| ![The gap](docs/screenshots/01-the-gap.png) | **The gap.** Three policy versions reconstructed from the bank's own documents, and the 2,759 customer-weeks that fell in the band nobody was watching. |
+| ![Evidence pack](docs/screenshots/03-evidence-pack-two-roles.png) | **One case, end to end** — and the same pack read by two roles. Name and PAN redacted for the investigator; **the content hash identical**. Masking changes what a person sees, not what was recorded. |
+| ![Tamper drills](docs/screenshots/04-tamper-drills.png) | **Three attacks on our own audit trail**, run as `ACCOUNTADMIN`. All caught — each by a different check. Rewording passes the link walk; deletion passes hash recomputation. Either check alone would have missed one. |
+| ![Verify the chain](docs/screenshots/05-verify-the-chain.png) | **Verify it yourself.** The public demo recomputes all 687 hashes in the browser, on a machine with no access to the Snowflake account. |
+
 
 ## Honest limitations
 
