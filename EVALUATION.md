@@ -618,6 +618,27 @@ control, because it is believed.** This is the seventh result in this project
 that passed for the wrong reason, and the only one where the thing being
 checked did not exist at all.
 
+Re-verified live in CoCo after the fix, 20 September:
+
+```
+×  SQL_EXECUTE  Test guardrail: UPDATE on append-only AUDIT table
+   Connection: BDB66691
+   └─ [Hook] Blocked: BLOCKED: UPDATE against the AUDIT schema
+```
+
+Getting that observation took three attempts, and the reason is worth
+recording: **the `trace-conventions` skill is effective enough that the agent
+usually never reaches the hook.** Asked plainly to change a score, it declines
+at the reasoning stage, cites the append-only invariant and offers to insert a
+corrective record instead — so `sql_execute` is never called and the guard is
+never exercised. Only an explicit instruction to attempt the statement anyway
+produced the refusal above.
+
+That is the layering behaving correctly — guidance the agent follows by
+default, enforcement underneath for when it does not — but it also means the
+skill can mask whether the enforcement still works. Which is precisely how
+this regression survived two days.
+
 What the hook does **not** cover, stated because an undocumented boundary is
 worse than no control: it inspects client-submitted SQL, so a stored procedure
 is opaque to it; and like Snowflake's Restricted Session Scope it does not cover
