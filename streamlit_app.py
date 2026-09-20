@@ -466,16 +466,41 @@ elif page.startswith("7"):
     for name, title in [
         ("candidate_predicates", "Extracted from the policy text"),
         ("certification_queue", "Awaiting human certification"),
-        ("enforceable_predicates", "Certified, and therefore enforceable"),
     ]:
         df = load(name)
         if df is not None:
             st.subheader(title)
             st.dataframe(df, use_container_width=True, hide_index=True)
+
+    # The enforceable set is EMPTY, and that is the demonstration rather than
+    # a gap in the export. sql/23 amends the policy text as its last act;
+    # certification is bound to a hash of that text, so every approval derived
+    # from it lapses. An unexplained empty table reads as a broken page, so the
+    # empty state is stated rather than rendered.
+    st.subheader("Certified, and therefore enforceable")
+    enf = load("enforceable_predicates")
+    if enf is not None and len(enf):
+        st.dataframe(enf, use_container_width=True, hide_index=True)
+    else:
+        st.warning(
+            "**Nothing is enforceable right now — and that is the point.**\n\n"
+            "Certification is bound to a SHA-256 of the policy text. The last "
+            "step of `sql/23_certification_gate.sql` amends that text, so every "
+            "approval derived from it lapsed the moment the document changed. "
+            "A predicate cannot stay approved for a document nobody has "
+            "re-read.\n\n"
+            "The operator's next step is to re-extract against the amended "
+            "text and re-certify, which starts the cycle again with a fresh "
+            "hash. That is the gate working, not a missing export.",
+            icon="🔒",
+        )
+
     st.caption(
-        "Certification is bound to a hash of the policy text. Amend the policy "
-        "and the certification lapses automatically — a rule cannot stay "
-        "approved for a document that has since changed."
+        "The model proposes. A human signs. SQL enforces. Each of those is a "
+        "separate step with a separate record, and the middle one cannot be "
+        "skipped — `V_ENFORCEABLE_PREDICATES` is the only view the replay "
+        "engine reads, and it filters on a signature that survives the text "
+        "it was given."
     )
 
 
